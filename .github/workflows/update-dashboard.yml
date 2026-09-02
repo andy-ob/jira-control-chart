@@ -2,7 +2,7 @@ name: Update Dashboard
 
 on:
   schedule:
-    - cron: "30 5 * * 1-5" # 05:30 UTC every weekday, before the working day starts
+    - cron: "30 7 * * 1-5" # weekdays 07:30 UTC = 08:30 UK in summer (07:30 in winter — cron has no timezone)
   workflow_dispatch:
     inputs:
       post_digest:
