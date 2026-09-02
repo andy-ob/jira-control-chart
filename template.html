@@ -1,0 +1,834 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>CPAO Control Chart</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📈</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Spline+Sans+Mono:wght@400;500&display=swap">
+<style>
+  :root {
+    color-scheme: light;
+    --page: #f4f6f8;
+    --surface: #fbfcfd;
+    --surface-2: #eef1f4;
+    --ink: #11161b;
+    --ink-2: #4b545d;
+    --muted: #87909a;
+    --grid: #e5e8ec;
+    --axis: #c8cdd4;
+    --border: rgba(17, 22, 27, 0.10);
+    --accent: #2a78d6;
+    --accent-deep: #1c5cab;
+    --accent-wash: rgba(42, 120, 214, 0.10);
+    --outlier: #ec835a;
+    --shadow: 0 1px 2px rgba(17, 22, 27, 0.05), 0 4px 16px rgba(17, 22, 27, 0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page: #0d0f12;
+      --surface: #16181b;
+      --surface-2: #1f2226;
+      --ink: #f2f4f6;
+      --ink-2: #b8bfc7;
+      --muted: #8a9199;
+      --grid: #26292e;
+      --axis: #3b4047;
+      --border: rgba(255, 255, 255, 0.10);
+      --accent: #3987e5;
+      --accent-deep: #86b6ef;
+      --accent-wash: rgba(57, 135, 229, 0.14);
+      --outlier: #ec835a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page: #0d0f12;
+    --surface: #16181b;
+    --surface-2: #1f2226;
+    --ink: #f2f4f6;
+    --ink-2: #b8bfc7;
+    --muted: #8a9199;
+    --grid: #26292e;
+    --axis: #3b4047;
+    --border: rgba(255, 255, 255, 0.10);
+    --accent: #3987e5;
+    --accent-deep: #86b6ef;
+    --accent-wash: rgba(57, 135, 229, 0.14);
+    --outlier: #ec835a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: "Archivo", system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 24px 48px; }
+
+  /* ---------- header ---------- */
+  header.masthead {
+    display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between;
+    gap: 12px 24px; margin-bottom: 20px;
+  }
+  .eyebrow {
+    font-size: 11px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--muted); margin: 0 0 4px;
+  }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.01em; margin: 0; text-wrap: balance; }
+  .masthead-side { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .board-link {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 500; color: var(--accent); text-decoration: none;
+    border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px;
+    background: var(--surface);
+  }
+  .board-link:hover { border-color: var(--accent); }
+  .fetched { font-size: 12px; color: var(--muted); }
+
+  /* ---------- filters ---------- */
+  .filters {
+    display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 14px;
+    margin-bottom: 18px;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field > label {
+    font-size: 10.5px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase;
+    color: var(--muted);
+  }
+  .field select {
+    font: 500 13px "Archivo", system-ui, sans-serif;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 7px 30px 7px 10px;
+    appearance: none;
+    background-image: linear-gradient(45deg, transparent 50%, currentColor 50%),
+                      linear-gradient(135deg, currentColor 50%, transparent 50%);
+    background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%;
+    background-size: 5px 5px;
+    background-repeat: no-repeat;
+    max-width: 240px;
+  }
+  .field select:focus-visible, .seg button:focus-visible, .board-link:focus-visible,
+  th button:focus-visible, details summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+  .seg button {
+    font: 500 13px "Archivo", system-ui, sans-serif;
+    color: var(--ink-2); background: transparent; border: 0; padding: 7px 12px; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+  .checkrow {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    font: 500 13px "Archivo", system-ui, sans-serif; color: var(--ink);
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 7px 12px;
+  }
+  .checkrow input { accent-color: var(--accent); width: 14px; height: 14px; margin: 0; }
+  .checkrow input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ---------- stat tiles ---------- */
+  .tiles {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px; margin-bottom: 14px;
+  }
+  .tile {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 14px 16px 12px; box-shadow: var(--shadow);
+    display: flex; flex-direction: column; gap: 2px; min-height: 92px;
+  }
+  .tile .t-label { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+  .tile .t-value { font-size: 30px; font-weight: 600; letter-spacing: -0.01em; line-height: 1.1; }
+  .tile .t-value .t-unit { font-size: 15px; font-weight: 500; color: var(--ink-2); margin-left: 2px; }
+  .tile .t-sub { font-size: 12px; color: var(--muted); margin-top: auto; display: flex; align-items: center; gap: 8px; }
+
+  /* ---------- cards ---------- */
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    box-shadow: var(--shadow); margin-bottom: 16px;
+  }
+  .card-head {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between;
+    gap: 6px 16px; padding: 16px 18px 0;
+  }
+  .card-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
+  .card-head .sub { font-size: 12.5px; color: var(--muted); }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 18px 0; font-size: 12px; color: var(--ink-2); }
+  .legend .k { display: inline-flex; align-items: center; gap: 7px; }
+  .k .swatch-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); }
+  .k .swatch-dot.outlier { background: var(--outlier); }
+  .k .swatch-line { width: 18px; height: 0; border-top: 2px solid var(--accent-deep); border-radius: 2px; }
+  .k .swatch-band { width: 16px; height: 11px; border-radius: 3px; background: var(--accent-wash); }
+  .k .swatch-p85 { width: 18px; height: 0; border-top: 2px dashed var(--muted); }
+
+  /* keyboard escape hatch: every chart dot is a tab stop, so offer a jump to the table */
+  .skip-link {
+    position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%);
+  }
+  .skip-link:focus-visible {
+    position: static; width: auto; height: auto; clip-path: none;
+    display: inline-block; margin: 8px 18px 0; padding: 6px 12px;
+    font-size: 12.5px; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 8px;
+  }
+
+  .chart-scroll { overflow-x: auto; }
+  .chart-wrap { position: relative; padding: 6px 10px 10px; min-width: 660px; }
+  #chart { display: block; width: 100%; }
+  #chart text { font-family: "Archivo", system-ui, sans-serif; font-size: 11.5px; fill: var(--muted); }
+  #chart .tick-num { font-variant-numeric: tabular-nums; }
+  #chart .guide-label { font-size: 11px; font-weight: 600; fill: var(--ink-2); }
+  #chart .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+  #chart .dot.outlier { fill: var(--outlier); }
+  #chart a:focus-visible .dot, #chart a:focus .dot { stroke: var(--ink); stroke-width: 2.5; }
+  #chart a { cursor: pointer; outline: none; }
+  .empty-note { padding: 40px 20px 50px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  /* tooltip */
+  .tooltip {
+    position: absolute; z-index: 5; pointer-events: none;
+    max-width: 300px; min-width: 190px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: var(--shadow); padding: 10px 12px; font-size: 12.5px;
+    display: none;
+  }
+  .tooltip .tt-value { font-size: 19px; font-weight: 600; letter-spacing: -0.01em; }
+  .tooltip .tt-key {
+    font-family: "Spline Sans Mono", ui-monospace, monospace; font-size: 12px; font-weight: 500;
+    color: var(--accent);
+  }
+  .tooltip .tt-flag { color: var(--outlier); font-weight: 600; font-size: 11.5px; }
+  .tooltip .tt-summary { color: var(--ink); margin: 3px 0 6px; }
+  .tooltip .tt-meta { color: var(--ink-2); font-size: 12px; }
+  .tooltip .tt-hint { color: var(--muted); font-size: 11px; margin-top: 6px; }
+
+  details.how { margin: 0 18px; padding: 0 0 14px; }
+  details.how summary { font-size: 12.5px; color: var(--ink-2); cursor: pointer; }
+  details.how p { font-size: 12.5px; color: var(--ink-2); max-width: 68ch; margin: 8px 0 0; }
+
+  /* ---------- table ---------- */
+  .table-scroll { overflow-x: auto; padding: 4px 6px 8px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 12px; border-top: 1px solid var(--grid); }
+  thead th { border-top: 0; font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  th button {
+    all: unset; cursor: pointer; font: inherit; color: inherit; letter-spacing: inherit;
+    display: inline-flex; gap: 4px; align-items: center;
+  }
+  th button:hover { color: var(--ink-2); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th.num { text-align: right; }
+  td.key a {
+    font-family: "Spline Sans Mono", ui-monospace, monospace; font-size: 12px;
+    color: var(--accent); text-decoration: none; white-space: nowrap;
+  }
+  td.key a:hover { text-decoration: underline; }
+  td.summary { max-width: 380px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+  td.dim { color: var(--ink-2); white-space: nowrap; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 10.5px; font-weight: 600; color: var(--outlier);
+    border: 1px solid var(--outlier); border-radius: 999px; padding: 1px 8px; white-space: nowrap;
+  }
+  .res-note { font-size: 11px; color: var(--muted); }
+
+  /* ---------- footer ---------- */
+  footer.provenance { font-size: 12px; color: var(--muted); max-width: 78ch; }
+  footer.provenance p { margin: 4px 0; }
+  footer.provenance a { color: var(--accent); }
+  footer.provenance code { font-family: "Spline Sans Mono", ui-monospace, monospace; font-size: 11px; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .tile, .card { transition: border-color 120ms ease; }
+  }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="masthead">
+    <div>
+      <p class="eyebrow">Twinkl · Jira project CPAO</p>
+      <h1 id="page-title">Cycle-time control chart</h1>
+    </div>
+    <div class="masthead-side">
+      <span class="fetched" id="fetched-note"></span>
+      <a class="board-link" href="https://twinkl.atlassian.net/jira/software/c/projects/CPAO/boards/2286" target="_blank" rel="noopener">Open board in Jira ↗</a>
+    </div>
+  </header>
+
+  <div class="filters" id="filters">
+    <div class="field">
+      <label for="f-range">Completed in</label>
+      <select id="f-range">
+        <option value="all">Last 90 days (full window)</option>
+        <option value="60">Last 60 days</option>
+        <option value="30">Last 30 days</option>
+        <option value="14">Last 14 days</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="f-type">Issue type</label>
+      <select id="f-type"><option value="all">All types</option></select>
+    </div>
+    <div class="field">
+      <label for="f-assignee">Assignee</label>
+      <select id="f-assignee"><option value="all">All assignees</option></select>
+    </div>
+    <div class="field">
+      <label for="f-start">Clock starts</label>
+      <select id="f-start">
+        <option value="__wip">First in-progress status</option>
+        <option value="__created">Issue created</option>
+      </select>
+    </div>
+    <div class="field" id="f-nowip-field">
+      <label for="f-nowip">Straight to Done</label>
+      <label class="checkrow"><input type="checkbox" id="f-nowip"><span>Include</span></label>
+    </div>
+    <div class="field">
+      <label id="daycount-label">Day count</label>
+      <div class="seg" role="group" aria-labelledby="daycount-label">
+        <button type="button" id="days-working" aria-pressed="true">Working</button>
+        <button type="button" id="days-calendar" aria-pressed="false">Calendar</button>
+      </div>
+    </div>
+    <div class="field">
+      <label id="scale-label">Y scale</label>
+      <div class="seg" role="group" aria-labelledby="scale-label">
+        <button type="button" id="scale-linear" aria-pressed="true">Linear</button>
+        <button type="button" id="scale-log" aria-pressed="false">Log</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tiles" id="tiles">
+    <div class="tile"><span class="t-label" id="l-median">Median cycle time</span><span class="t-value" id="v-median">—</span><span class="t-sub" id="s-median"></span></div>
+    <div class="tile"><span class="t-label">85th percentile</span><span class="t-value" id="v-p85">—</span><span class="t-sub" id="s-p85">15% of issues take longer</span></div>
+    <div class="tile"><span class="t-label">Throughput</span><span class="t-value" id="v-thru">—</span><span class="t-sub" id="s-thru"></span></div>
+    <div class="tile"><span class="t-label">Completed</span><span class="t-value" id="v-count">—</span><span class="t-sub" id="s-count"></span></div>
+  </div>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Control chart</h2>
+      <span class="sub" id="chart-sub"></span>
+    </div>
+    <div class="legend" aria-hidden="false">
+      <span class="k"><span class="swatch-dot"></span>Completed issue</span>
+      <span class="k"><span class="swatch-dot outlier"></span>▲ Above 85th percentile</span>
+      <span class="k"><span class="swatch-line"></span>Rolling average (7 issues)</span>
+      <span class="k"><span class="swatch-band"></span>Mean ± 1σ</span>
+      <span class="k"><span class="swatch-p85"></span>85th percentile</span>
+    </div>
+    <a class="skip-link" href="#issue-table">Skip chart, go to issues table</a>
+    <div class="chart-scroll">
+      <div class="chart-wrap" id="chart-wrap">
+        <svg id="chart" role="img" aria-label="Scatter plot of cycle time in days for each completed issue, by completion date."></svg>
+        <div class="tooltip" id="tooltip"></div>
+      </div>
+    </div>
+    <details class="how">
+      <summary>How to read this chart</summary>
+      <p id="how-text">Each dot is one completed issue, placed at the date it reached a Done status; its height is the cycle time, meaning how long it spent between the selected clock-start point and completion. The shaded band covers one standard deviation either side of the mean for the current slice: a tight band means predictable delivery. Dots above the dashed 85th-percentile line are the slowest 15% and are worth a look. Issues that jumped from To Do straight to Done, never entering an in-progress status, have no meaningful cycle time and are excluded by default; the "Straight to Done" filter brings them back, clocked from their creation date. Time is counted in working days: Saturdays and Sundays are subtracted from every measurement, so a ticket picked up on Friday afternoon and finished Monday morning counts well under a day rather than three. Switch "Day count" to Calendar for raw elapsed time. Public holidays are not excluded. Click any dot to open the issue in Jira.</p>
+    </details>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>Completed issues</h2>
+      <span class="sub" id="table-sub"></span>
+    </div>
+    <div class="table-scroll">
+      <table id="issue-table">
+        <thead>
+          <tr>
+            <th>Key</th>
+            <th>Summary</th>
+            <th>Type</th>
+            <th>Assignee</th>
+            <th>Clock start</th>
+            <th id="th-completed" aria-sort="descending"><button type="button" id="sort-completed">Completed <span id="arr-completed" aria-hidden="true">↓</span></button></th>
+            <th class="num" id="th-days" aria-sort="none"><button type="button" id="sort-days"><span id="th-days-label">Cycle time</span> <span id="arr-days" aria-hidden="true"></span></button></th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="provenance" id="provenance"></footer>
+</div>
+
+<script>
+const DATA = {"issues":[],"transitions":{}}; // __INJECT__
+const META = {"fetchedAt":"2026-08-20T11:00:00Z","windowDays":90,"windowStart":"2026-05-22","jql":"","projectTotals":{"all":0,"doneLast12Months":0},"issueCount":0}; // __INJECT_META__
+const FETCH_TS = new Date(META.fetchedAt).getTime();
+const WINDOW_START = new Date(META.windowStart + "T00:00:00Z").getTime();
+const WINDOW_DAYS = META.windowDays;
+const PROJECT_TOTALS = META.projectTotals;
+const SITE = "https://twinkl.atlassian.net";
+const BOARD_URL = "https://twinkl.atlassian.net/jira/software/c/projects/CPAO/boards/2286";
+const DAY = 86400000;
+const HAS_CHANGELOG = Object.keys(DATA.transitions).length > 0;
+const METRIC = HAS_CHANGELOG ? "cycle time" : "lead time";
+
+/* ---------- status category map ---------- */
+const CAT_FROM_DATA = {};
+DATA.issues.forEach(i => { if (i.status) CAT_FROM_DATA[i.status] = i.statusCategory; });
+function catOf(name) {
+  if (name in CAT_FROM_DATA) return CAT_FROM_DATA[name];
+  if (/(done|closed|resolved|complete|cancell|won'?t|reject)/i.test(name)) return "done";
+  if (/^(to ?do|open|backlog|new|triage|selected|ready)/i.test(name)) return "new";
+  return "indeterminate";
+}
+
+/* ---------- build completed-issue records ---------- */
+const doneIssues = [];
+const wipStatusCounts = {};
+DATA.issues.forEach(i => {
+  if (i.statusCategory !== "done") return;
+  const trs = (DATA.transitions[i.key] || []).slice()
+    .map(t => ({ from: t[0], to: t[1], at: new Date(t[2]).getTime() }))
+    .sort((a, b) => a.at - b.at);
+  let doneAt = null;
+  for (const t of trs) if (catOf(t.to) === "done") doneAt = t.at;
+  if (!doneAt && i.resolved) doneAt = new Date(i.resolved).getTime();
+  if (!doneAt) return;
+  const created = new Date(i.created).getTime();
+  const wipEntries = trs.filter(t => catOf(t.to) === "indeterminate" && t.at <= doneAt);
+  wipEntries.forEach(t => { wipStatusCounts[t.to] = (wipStatusCounts[t.to] || 0) + 1; });
+  doneIssues.push({
+    key: i.key, summary: i.summary, type: i.type,
+    assignee: i.assignee || "Unassigned", assigneeId: i.assigneeId || "none",
+    created, doneAt, wipEntries, trs,
+    resolution: i.resolution || null,
+    url: SITE + "/browse/" + i.key
+  });
+});
+doneIssues.sort((a, b) => a.doneAt - b.doneAt);
+
+/* clock start per selected mode */
+function startOf(issue, mode) {
+  if (mode === "__created") return { at: issue.created, label: "created" };
+  if (mode === "__wip") {
+    const e = issue.wipEntries[0];
+    return e ? { at: e.at, label: e.to } : { at: issue.created, label: "created (no in-progress record)" };
+  }
+  const e = issue.trs.find(t => t.to === mode && t.at <= issue.doneAt);
+  if (e) return { at: e.at, label: e.to };
+  const w = issue.wipEntries[0];
+  return w ? { at: w.at, label: w.to } : { at: issue.created, label: "created (never entered " + mode + ")" };
+}
+
+/* ---------- populate filter options ---------- */
+const $ = id => document.getElementById(id);
+$("f-range").querySelector('option[value="all"]').textContent = "Last " + WINDOW_DAYS + " days (full window)";
+const selType = $("f-type"), selAssignee = $("f-assignee"), selStart = $("f-start");
+[...new Set(doneIssues.map(i => i.type))].sort().forEach(t => {
+  const o = document.createElement("option"); o.value = t; o.textContent = t; selType.appendChild(o);
+});
+const assignees = new Map();
+doneIssues.forEach(i => assignees.set(i.assigneeId, i.assignee));
+[...assignees.entries()].sort((a, b) => a[1].localeCompare(b[1])).forEach(([id, name]) => {
+  const o = document.createElement("option"); o.value = id; o.textContent = name; selAssignee.appendChild(o);
+});
+Object.entries(wipStatusCounts).sort((a, b) => b[1] - a[1]).forEach(([name]) => {
+  const o = document.createElement("option"); o.value = name; o.textContent = "Entered “" + name + "”"; selStart.appendChild(o);
+});
+
+/* ---------- lead-time fallback labeling (no changelog data in this snapshot) ---------- */
+if (!HAS_CHANGELOG) {
+  $("page-title").textContent = "Lead-time control chart";
+  $("l-median").textContent = "Median lead time";
+  $("f-start").closest(".field").style.display = "none";
+  $("f-nowip-field").style.display = "none";
+  $("how-text").textContent = "Each dot is one completed issue, placed at the date it reached a Done status; its height is the lead time, meaning the days from the issue being created to it being completed. Status-level history isn't part of this snapshot, so time spent waiting in the backlog is included. The shaded band covers one standard deviation either side of the mean for the current slice: a tight band means predictable delivery. Dots above the dashed 85th-percentile line are the slowest 15% and are worth a look. Click any dot to open the issue in Jira.";
+  $("chart").setAttribute("aria-label", "Scatter plot of lead time in days for each completed issue, by completion date.");
+}
+
+/* ---------- state ---------- */
+const state = { range: "all", type: "all", assignee: "all", start: HAS_CHANGELOG ? "__wip" : "__created", includeNoWip: false, workingDays: true, scale: "linear", sort: "completed", dir: -1 };
+
+/* ---------- helpers ---------- */
+const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+/* All date formatting and day math use UTC so the published numbers and labels
+   are identical for every viewer, wherever they open the page. */
+function fmtDate(ms) { const d = new Date(ms); return d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + String(d.getUTCFullYear()).slice(2); }
+function fmtMonth(ms) { const d = new Date(ms); return MONTHS[d.getUTCMonth()] + " ’" + String(d.getUTCFullYear()).slice(2); }
+function fmtLong(ms) { const d = new Date(ms); return d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + d.getUTCFullYear(); }
+function fmtDays(v) {
+  if (v <= 0) return "0";
+  if (v < 0.1) return "<0.1";
+  if (v < 10) return (Math.round(v * 10) / 10).toString();
+  return Math.round(v).toString();
+}
+/* Milliseconds of Saturday and Sunday inside [from, to). Day boundaries are UTC,
+   so the working-day stats don't shift with the viewer's timezone. */
+function weekendMs(from, to) {
+  if (!(to > from)) return 0;
+  let total = 0;
+  const cur = new Date(from);
+  cur.setUTCHours(0, 0, 0, 0);
+  while (cur.getTime() < to) {
+    const dayStart = cur.getTime();
+    const dow = cur.getUTCDay();
+    cur.setUTCDate(cur.getUTCDate() + 1);
+    const dayEnd = cur.getTime();
+    if (dow === 0 || dow === 6) {
+      const s = Math.max(dayStart, from), e = Math.min(dayEnd, to);
+      if (e > s) total += e - s;
+    }
+  }
+  return total;
+}
+function daysBetween(from, to, workingOnly) {
+  const span = Math.max(to - from, 0);
+  return (workingOnly ? Math.max(span - weekendMs(from, to), 0) : span) / DAY;
+}
+function unitLabel() { return state.workingDays ? "working days" : "calendar days"; }
+function quantile(sorted, p) {
+  if (!sorted.length) return NaN;
+  const idx = (sorted.length - 1) * p, lo = Math.floor(idx), hi = Math.ceil(idx);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+function svgEl(tag, attrs) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  return e;
+}
+
+/* ---------- slice computation ---------- */
+function computeSlice() {
+  const now = FETCH_TS;
+  const rangeMs = state.range === "all" ? null : Number(state.range) * DAY;
+  const rows = [];
+  let excludedNoWip = 0;
+  doneIssues.forEach(i => {
+    if (state.type !== "all" && i.type !== state.type) return;
+    if (state.assignee !== "all" && i.assigneeId !== state.assignee) return;
+    if (rangeMs && i.doneAt < now - rangeMs) return;
+    const noWip = HAS_CHANGELOG && i.wipEntries.length === 0;
+    if (noWip && !state.includeNoWip) { excludedNoWip++; return; }
+    const s = startOf(i, state.start);
+    const calDays = daysBetween(s.at, i.doneAt, false);
+    const wrkDays = daysBetween(s.at, i.doneAt, true);
+    rows.push({ ...i, startAt: s.at, startLabel: s.label, calDays, wrkDays,
+      days: state.workingDays ? wrkDays : calDays, noWip });
+  });
+  rows.sort((a, b) => a.doneAt - b.doneAt);
+  const vals = rows.map(r => r.days).sort((a, b) => a - b);
+  const n = vals.length;
+  const mean = n ? vals.reduce((s, v) => s + v, 0) / n : NaN;
+  const sd = n > 1 ? Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / n) : 0;
+  const median = quantile(vals, 0.5), p85 = quantile(vals, 0.85);
+  rows.forEach(r => { r.outlier = n >= 5 && r.days > p85; });
+  // rolling average, centered window of 7 by completion order
+  rows.forEach((r, idx) => {
+    const lo = Math.max(0, idx - 3), hi = Math.min(rows.length - 1, idx + 3);
+    let s = 0; for (let j = lo; j <= hi; j++) s += rows[j].days;
+    r.roll = s / (hi - lo + 1);
+  });
+  // domain
+  let x0, x1;
+  if (rangeMs) { x0 = now - rangeMs; x1 = now; }
+  else { x0 = WINDOW_START; x1 = now; }
+  const weeks = Math.max((x1 - x0) / (7 * DAY), 1);
+  return { rows, n, mean, sd, median, p85, x0, x1, weeks, excludedNoWip };
+}
+
+/* ---------- stat tiles ---------- */
+function renderTiles(sl) {
+  const put = (id, html) => { $(id).textContent = ""; $(id).append(html); };
+  function valueNode(v, unit) {
+    const frag = document.createDocumentFragment();
+    frag.append(document.createTextNode(v));
+    if (unit) { const u = document.createElement("span"); u.className = "t-unit"; u.textContent = unit; frag.append(u); }
+    return frag;
+  }
+  if (!sl.n) {
+    ["v-median", "v-p85", "v-thru", "v-count"].forEach(id => put(id, document.createTextNode("—")));
+    $("s-median").textContent = ""; $("s-thru").textContent = ""; $("s-count").textContent = "no issues in this slice";
+    return;
+  }
+  put("v-median", valueNode(fmtDays(sl.median), " " + unitLabel()));
+  $("s-median").textContent = "mean " + fmtDays(sl.mean) + "d · σ " + fmtDays(sl.sd) + "d";
+  put("v-p85", valueNode(fmtDays(sl.p85), " " + unitLabel()));
+  put("v-thru", valueNode((sl.n / sl.weeks).toFixed(sl.n / sl.weeks < 10 ? 1 : 0), " /week"));
+  // sparkline: 12 buckets across the domain
+  const sub = $("s-thru"); sub.textContent = "";
+  const buckets = new Array(12).fill(0);
+  sl.rows.forEach(r => {
+    const b = Math.min(11, Math.floor((r.doneAt - sl.x0) / (sl.x1 - sl.x0) * 12));
+    buckets[Math.max(0, b)]++;
+  });
+  const maxB = Math.max(...buckets, 1);
+  const sp = svgEl("svg", { width: 84, height: 24, viewBox: "0 0 84 24", "aria-hidden": "true" });
+  const pts = buckets.map((v, i) => (i * (84 / 11)).toFixed(1) + "," + (21 - v / maxB * 18).toFixed(1));
+  sp.append(svgEl("polyline", { points: pts.join(" "), fill: "none", stroke: "var(--muted)", "stroke-width": 1.5, "stroke-linejoin": "round", "stroke-linecap": "round" }));
+  const last = pts[11].split(",");
+  sp.append(svgEl("circle", { cx: last[0], cy: last[1], r: 2.5, fill: "var(--accent)" }));
+  sub.append(sp, document.createTextNode("completions over range"));
+  put("v-count", valueNode(String(sl.n), ""));
+  $("s-count").textContent = "issues in selected slice";
+}
+
+/* ---------- chart ---------- */
+function renderChart(sl) {
+  const svg = $("chart"), wrap = $("chart-wrap");
+  svg.textContent = "";
+  const old = wrap.querySelector(".empty-note"); if (old) old.remove();
+  const W = Math.max(wrap.clientWidth - 20, 640), H = 400;
+  const M = { l: 52, r: 24, t: 18, b: 40 };
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.setAttribute("width", W); svg.setAttribute("height", H);
+  if (!sl.n) {
+    const note = document.createElement("div");
+    note.className = "empty-note";
+    note.textContent = "No completed issues match the current filters.";
+    wrap.append(note);
+    $("chart-sub").textContent = sl.excludedNoWip ? sl.excludedNoWip + " excluded (went straight to Done)" : "";
+    return;
+  }
+  const iw = W - M.l - M.r, ih = H - M.t - M.b;
+  const x = ms => M.l + (ms - sl.x0) / (sl.x1 - sl.x0) * iw;
+  // 0.5 floor: an all-zero slice must not collapse the scale (0/0 → NaN coordinates)
+  const maxV = Math.max(...sl.rows.map(r => r.days), sl.mean + sl.sd, sl.p85, 0.5);
+  let y;
+  let yTicks = [];
+  if (state.scale === "log") {
+    const lo = 0.05, hi = maxV * 1.25;
+    y = v => M.t + ih - (Math.log10(Math.max(v, lo)) - Math.log10(lo)) / (Math.log10(hi) - Math.log10(lo)) * ih;
+    [0.1, 0.3, 1, 3, 10, 30, 100, 300, 1000].forEach(t => { if (t >= lo && t <= hi) yTicks.push(t); });
+  } else {
+    const hi = maxV * 1.1;
+    y = v => M.t + ih - v / hi * ih;
+    const steps = [0.25, 0.5, 1, 2, 5, 10, 20, 25, 50, 100, 200, 365, 500, 1000];
+    const step = steps.find(s => hi / s <= 6) || 1000;
+    for (let t = 0; t <= hi; t += step) yTicks.push(t);
+  }
+  // gridlines + y labels
+  yTicks.forEach(t => {
+    svg.append(svgEl("line", { x1: M.l, x2: W - M.r, y1: y(t), y2: y(t), stroke: "var(--grid)", "stroke-width": 1 }));
+    const lbl = svgEl("text", { x: M.l - 8, y: y(t) + 4, "text-anchor": "end", class: "tick-num" });
+    lbl.textContent = t >= 1 ? t + "d" : t + "d";
+    svg.append(lbl);
+  });
+  // x ticks: weekly Mondays for short windows, month boundaries otherwise
+  const spanDays = (sl.x1 - sl.x0) / DAY;
+  const ticks = [];
+  if (spanDays <= 120) {
+    const d0 = new Date(sl.x0); d0.setUTCHours(0, 0, 0, 0);
+    while (d0.getUTCDay() !== 1) d0.setUTCDate(d0.getUTCDate() + 1);
+    for (let d = new Date(d0); d.getTime() <= sl.x1; d.setUTCDate(d.getUTCDate() + 7)) {
+      if (d.getTime() >= sl.x0) ticks.push({ at: d.getTime(), label: fmtDate(d.getTime()) });
+    }
+  } else {
+    const d0 = new Date(sl.x0); d0.setUTCDate(1); d0.setUTCHours(0, 0, 0, 0);
+    for (let d = new Date(d0); d.getTime() <= sl.x1; d.setUTCMonth(d.getUTCMonth() + 1)) {
+      if (d.getTime() >= sl.x0) ticks.push({ at: d.getTime(), label: fmtMonth(d.getTime()) });
+    }
+  }
+  const every = Math.ceil(ticks.length / Math.max(Math.floor(iw / 96), 2));
+  ticks.forEach((t, i) => {
+    if (i % every) return;
+    const lbl = svgEl("text", { x: x(t.at), y: H - M.b + 22, "text-anchor": "middle" });
+    lbl.textContent = t.label;
+    svg.append(lbl);
+    svg.append(svgEl("line", { x1: x(t.at), x2: x(t.at), y1: H - M.b, y2: H - M.b + 5, stroke: "var(--axis)", "stroke-width": 1 }));
+  });
+  // baseline
+  svg.append(svgEl("line", { x1: M.l, x2: W - M.r, y1: H - M.b, y2: H - M.b, stroke: "var(--axis)", "stroke-width": 1 }));
+  // y-axis unit note
+  const unit = svgEl("text", { x: M.l, y: M.t - 4, "text-anchor": "start" });
+  unit.textContent = METRIC + ", " + unitLabel();
+  svg.append(unit);
+
+  if (sl.n >= 2) {
+    // sigma band
+    const bandTop = y(sl.mean + sl.sd);
+    const bandBot = Math.min(y(Math.max(sl.mean - sl.sd, 0.005)), H - M.b);
+    svg.append(svgEl("rect", { x: M.l, y: bandTop, width: iw, height: Math.max(bandBot - bandTop, 0), fill: "var(--accent-wash)" }));
+    // mean line
+    svg.append(svgEl("line", { x1: M.l, x2: W - M.r, y1: y(sl.mean), y2: y(sl.mean), stroke: "var(--accent)", "stroke-width": 1.5, opacity: 0.85 }));
+    const meanLbl = svgEl("text", { x: W - M.r - 4, y: y(sl.mean) - 5, "text-anchor": "end", class: "guide-label" });
+    meanLbl.textContent = "mean " + fmtDays(sl.mean) + "d";
+    svg.append(meanLbl);
+    // p85 line (dashed threshold)
+    svg.append(svgEl("line", { x1: M.l, x2: W - M.r, y1: y(sl.p85), y2: y(sl.p85), stroke: "var(--muted)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }));
+    const pLbl = svgEl("text", { x: M.l + 4, y: y(sl.p85) - 5, class: "guide-label" });
+    pLbl.textContent = "85% ≤ " + fmtDays(sl.p85) + "d";
+    svg.append(pLbl);
+    // rolling average
+    if (sl.rows.length >= 3) {
+      const path = sl.rows.map((r, i) => (i ? "L" : "M") + x(r.doneAt).toFixed(1) + " " + y(r.roll).toFixed(1)).join(" ");
+      svg.append(svgEl("path", { d: path, fill: "none", stroke: "var(--accent-deep)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", opacity: 0.9 }));
+    }
+  }
+  // dots (each an <a> with a generous transparent hit circle)
+  sl.rows.forEach(r => {
+    const a = svgEl("a", { href: r.url, target: "_blank", rel: "noopener" });
+    a.append(svgEl("circle", { cx: x(r.doneAt), cy: y(r.days), r: 13, fill: "transparent" }));
+    a.append(svgEl("circle", { cx: x(r.doneAt), cy: y(r.days), r: 4.5, class: "dot" + (r.outlier ? " outlier" : "") }));
+    const title = svgEl("title", {});
+    title.textContent = r.key + ": " + fmtDays(r.days) + " days";
+    a.append(title);
+    a.addEventListener("pointerenter", ev => showTip(r, x(r.doneAt), y(r.days)));
+    a.addEventListener("focus", () => showTip(r, x(r.doneAt), y(r.days)));
+    a.addEventListener("pointerleave", hideTip);
+    a.addEventListener("blur", hideTip);
+    svg.append(a);
+  });
+  $("chart-sub").textContent = sl.n + " completed issues · " + fmtDate(sl.x0) + " – " + fmtDate(sl.x1)
+    + (sl.excludedNoWip ? " · " + sl.excludedNoWip + " excluded (went straight to Done)" : "");
+}
+
+/* ---------- tooltip ---------- */
+const tip = $("tooltip");
+function showTip(r, px, py) {
+  tip.textContent = "";
+  const v = document.createElement("div"); v.className = "tt-value";
+  v.textContent = fmtDays(r.days) + " " + unitLabel();
+  const k = document.createElement("div");
+  const key = document.createElement("span"); key.className = "tt-key"; key.textContent = r.key;
+  k.append(key);
+  if (r.outlier) { const f = document.createElement("span"); f.className = "tt-flag"; f.textContent = " ▲ above 85th percentile"; k.append(f); }
+  const s = document.createElement("div"); s.className = "tt-summary";
+  s.textContent = r.summary.length > 90 ? r.summary.slice(0, 90) + "…" : r.summary;
+  const m1 = document.createElement("div"); m1.className = "tt-meta"; m1.textContent = r.type + " · " + r.assignee;
+  const m2 = document.createElement("div"); m2.className = "tt-meta";
+  m2.textContent = fmtDate(r.startAt) + " (" + r.startLabel + ") → " + fmtDate(r.doneAt);
+  const mAlt = document.createElement("div"); mAlt.className = "tt-meta";
+  mAlt.textContent = state.workingDays
+    ? fmtDays(r.calDays) + " calendar days elapsed"
+    : fmtDays(r.wrkDays) + " working days (weekends removed)";
+  const m3 = document.createElement("div"); m3.className = "tt-meta";
+  if (r.resolution && !/^done$/i.test(r.resolution)) m3.textContent = "Resolution: " + r.resolution;
+  const h = document.createElement("div"); h.className = "tt-hint"; h.textContent = "Click to open in Jira";
+  tip.append(v, k, s, m1, m2, mAlt, m3, h);
+  tip.style.display = "block";
+  const wrap = $("chart-wrap");
+  const tw = tip.offsetWidth, thh = tip.offsetHeight;
+  let left = px + 16, top = py - thh / 2;
+  if (left + tw > wrap.clientWidth - 8) left = px - tw - 16;
+  top = Math.max(4, Math.min(top, wrap.clientHeight - thh - 4));
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+function hideTip() { tip.style.display = "none"; }
+
+/* ---------- table ---------- */
+function renderTable(sl) {
+  const body = $("table-body");
+  body.textContent = "";
+  const rows = sl.rows.slice().sort((a, b) =>
+    state.sort === "days" ? (a.days - b.days) * state.dir : (a.doneAt - b.doneAt) * state.dir);
+  rows.forEach(r => {
+    const tr = document.createElement("tr");
+    const tdKey = document.createElement("td"); tdKey.className = "key";
+    const a = document.createElement("a"); a.href = r.url; a.target = "_blank"; a.rel = "noopener"; a.textContent = r.key;
+    tdKey.append(a);
+    const tdSum = document.createElement("td"); tdSum.className = "summary"; tdSum.textContent = r.summary; tdSum.title = r.summary;
+    const tdType = document.createElement("td"); tdType.className = "dim"; tdType.textContent = r.type;
+    const tdAss = document.createElement("td"); tdAss.className = "dim"; tdAss.textContent = r.assignee;
+    const tdStart = document.createElement("td"); tdStart.className = "dim"; tdStart.textContent = fmtDate(r.startAt);
+    const tdDone = document.createElement("td"); tdDone.className = "dim"; tdDone.textContent = fmtDate(r.doneAt);
+    const tdDays = document.createElement("td"); tdDays.className = "num"; tdDays.textContent = fmtDays(r.days) + "d";
+    const tdFlag = document.createElement("td");
+    if (r.outlier) { const c = document.createElement("span"); c.className = "chip"; c.textContent = "▲ slow 15%"; tdFlag.append(c); }
+    if (r.resolution && !/^done$/i.test(r.resolution)) {
+      const n = document.createElement("div"); n.className = "res-note"; n.textContent = r.resolution; tdFlag.append(n);
+    }
+    if (r.noWip) {
+      const n = document.createElement("div"); n.className = "res-note"; n.textContent = "went straight to Done"; tdFlag.append(n);
+    }
+    tr.append(tdKey, tdSum, tdType, tdAss, tdStart, tdDone, tdDays, tdFlag);
+    body.append(tr);
+  });
+  $("th-days-label").textContent = state.workingDays ? "Working days" : "Calendar days";
+  $("table-sub").textContent = rows.length + " rows · " + METRIC + " in " + unitLabel() + " · every value on the chart is in this table";
+  $("arr-completed").textContent = state.sort === "completed" ? (state.dir < 0 ? "↓" : "↑") : "";
+  $("arr-days").textContent = state.sort === "days" ? (state.dir < 0 ? "↓" : "↑") : "";
+  $("th-completed").setAttribute("aria-sort", state.sort === "completed" ? (state.dir < 0 ? "descending" : "ascending") : "none");
+  $("th-days").setAttribute("aria-sort", state.sort === "days" ? (state.dir < 0 ? "descending" : "ascending") : "none");
+}
+
+/* ---------- provenance ---------- */
+function renderProvenance() {
+  const fetchedLbl = fmtLong(FETCH_TS);
+  const p = $("provenance");
+  p.textContent = "";
+  const p1 = document.createElement("p");
+  p1.append("Source: Jira project ");
+  const bl = document.createElement("a"); bl.href = BOARD_URL; bl.target = "_blank"; bl.rel = "noopener"; bl.textContent = "CPAO board 2286";
+  p1.append(bl);
+  p1.append(" on twinkl.atlassian.net, fetched " + fetchedLbl + " via JQL ");
+  const code = document.createElement("code");
+  code.textContent = META.jql || 'project = CPAO AND statusCategory = Done AND resolved >= "' + META.windowStart + '"';
+  p1.append(code);
+  p1.append(", covering every issue completed in the " + WINDOW_DAYS + " days to " + fetchedLbl + " (" + doneIssues.length + " issues). " + (HAS_CHANGELOG
+    ? "Each issue carries its full status-transition history from the issue changelog; clock start is as selected in the filter, clock stop is the last transition into a Done-category status."
+    : "This snapshot charts lead time (created → resolved) from issue dates; per-issue status history hasn't been fetched yet, so time waiting in the backlog is included in every measurement."));
+  const p2 = document.createElement("p");
+  p2.textContent = "Project context: CPAO holds " + PROJECT_TOTALS.all.toLocaleString() + " issues all-time, " + PROJECT_TOTALS.doneLast12Months.toLocaleString() + " of them completed in the 12 months to " + fetchedLbl + ". This page charts the " + WINDOW_DAYS + "-day window only, the timeframe Jira's own control chart defaults to.";
+  const p3 = document.createElement("p");
+  p3.textContent = "Issue and board links require Twinkl Atlassian access; a 403 means you're not signed in, not a broken link. Percentiles, mean, σ and the rolling average are recomputed live for whatever slice the filters select, in whichever day count is selected. Working days subtract whole Saturdays and Sundays from the measured interval; public holidays and working hours are not modelled, so an overnight Tuesday-to-Wednesday handover still counts as roughly one day. Day boundaries are evaluated in UTC, so every viewer sees the same numbers.";
+  p.append(p1, p2, p3);
+  $("fetched-note").textContent = "Updated " + fetchedLbl + " · completions since " + fmtLong(WINDOW_START);
+}
+
+/* ---------- wiring ---------- */
+function renderAll() {
+  const sl = computeSlice();
+  renderTiles(sl);
+  renderChart(sl);
+  renderTable(sl);
+}
+$("f-range").addEventListener("change", e => { state.range = e.target.value; renderAll(); });
+$("f-type").addEventListener("change", e => { state.type = e.target.value; renderAll(); });
+$("f-assignee").addEventListener("change", e => { state.assignee = e.target.value; renderAll(); });
+$("f-start").addEventListener("change", e => { state.start = e.target.value; renderAll(); });
+$("f-nowip").addEventListener("change", e => { state.includeNoWip = e.target.checked; renderAll(); });
+$("days-working").addEventListener("click", () => setDayCount(true));
+$("days-calendar").addEventListener("click", () => setDayCount(false));
+function setDayCount(working) {
+  state.workingDays = working;
+  $("days-working").setAttribute("aria-pressed", String(working));
+  $("days-calendar").setAttribute("aria-pressed", String(!working));
+  renderAll();
+}
+$("scale-linear").addEventListener("click", () => setScale("linear"));
+$("scale-log").addEventListener("click", () => setScale("log"));
+function setScale(s) {
+  state.scale = s;
+  $("scale-linear").setAttribute("aria-pressed", String(s === "linear"));
+  $("scale-log").setAttribute("aria-pressed", String(s === "log"));
+  renderAll();
+}
+$("sort-completed").addEventListener("click", () => {
+  state.dir = state.sort === "completed" ? -state.dir : -1; state.sort = "completed"; renderTable(computeSlice());
+});
+$("sort-days").addEventListener("click", () => {
+  state.dir = state.sort === "days" ? -state.dir : -1; state.sort = "days"; renderTable(computeSlice());
+});
+let resizeT;
+window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(renderAll, 150); });
+
+renderProvenance();
+renderAll();
+</script>
+</body>
+</html>

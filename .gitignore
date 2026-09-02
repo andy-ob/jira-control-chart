@@ -1,0 +1,11 @@
+.atlassian-token
+*.token
+.env*
+
+# Fetched Jira data and the built page: regenerated on every run, never committed
+data/
+dashboard.html
+_site/
+
+.DS_Store
+node_modules/
