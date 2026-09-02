@@ -82,28 +82,27 @@
   #matrix-rain {
     position: fixed; inset: 0; width: 100%; height: 100%; /* canvas is replaced content: inset alone doesn't size it */
     z-index: 0; pointer-events: none;
-    opacity: 0.10;
+    opacity: 0.18;
     transition: opacity 600ms ease; /* smooth ramp in/out of flood mode */
   }
   /* CRT atmosphere: faint scanlines + vignette over everything, clicks pass through */
-  /* opacities kept low enough that edge/muted text stays ≥ 4.5:1 under the overlay */
   #crt {
     position: fixed; inset: 0; z-index: 40; pointer-events: none;
     background:
-      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.03) 0 1px, transparent 1px 3px),
-      radial-gradient(ellipse at center, transparent 62%, rgba(0, 0, 0, 0.05) 100%);
+      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.04) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, transparent 62%, rgba(0, 0, 0, 0.08) 100%);
   }
   @media (prefers-color-scheme: dark) {
     :root:not([data-theme="light"]) #crt {
       background:
-        repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 3px),
-        radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.10) 100%);
+        repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.08) 0 1px, transparent 1px 3px),
+        radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.18) 100%);
     }
   }
   :root[data-theme="dark"] #crt {
     background:
-      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 3px),
-      radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.10) 100%);
+      repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.08) 0 1px, transparent 1px 3px),
+      radial-gradient(ellipse at center, transparent 60%, rgba(0, 0, 0, 0.18) 100%);
   }
   /* boot intro overlay: translucent so the rain flood shows through behind the type */
   #boot {
@@ -136,11 +135,10 @@
     position: absolute; width: 1px; height: 1px; overflow: hidden;
     clip-path: inset(50%); white-space: nowrap;
   }
-  /* dark opacity chosen so muted 12px text above a glyph column stays ≥ 4.5:1 */
   @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) #matrix-rain { opacity: 0.12; }
+    :root:not([data-theme="light"]) #matrix-rain { opacity: 0.30; }
   }
-  :root[data-theme="dark"] #matrix-rain { opacity: 0.12; }
+  :root[data-theme="dark"] #matrix-rain { opacity: 0.30; }
   @media (prefers-reduced-motion: reduce) {
     #matrix-rain { display: none; }
   }
@@ -1044,7 +1042,7 @@ const rain = (function () {
     const t = document.documentElement.getAttribute("data-theme");
     return t ? t === "dark" : dark.matches;
   };
-  let cols = 0, drops = [], W = 0, H = 0;
+  let cols = 0, drops = [], speeds = [], W = 0, H = 0;
   function size() {
     if (window.innerWidth === W && window.innerHeight === H) return;
     const widthChanged = window.innerWidth !== W;
@@ -1058,8 +1056,10 @@ const rain = (function () {
     // Keep falling columns where they are; only add fresh ones on width growth,
     // so mobile URL-bar height changes don't restart the whole effect.
     if (widthChanged || !drops.length) {
-      const old = drops;
+      const old = drops, oldSpeeds = speeds;
       drops = Array.from({ length: cols }, (_, i) => old[i] !== undefined ? old[i] : Math.random() * -H / FONT);
+      // per-column speeds give the rain organic texture instead of a marching wall
+      speeds = Array.from({ length: cols }, (_, i) => oldSpeeds[i] !== undefined ? oldSpeeds[i] : 0.6 + Math.random() * 0.8);
     }
   }
   let sizeT;
@@ -1091,15 +1091,15 @@ const rain = (function () {
     ctx.fillStyle = d ? "rgba(13, 15, 18, " + (f ? 0.12 : 0.2) + ")" : "rgba(244, 246, 248, " + (f ? 0.12 : 0.2) + ")";
     ctx.fillRect(0, 0, W, H);
     const glyph = d ? "#00ff41" : "#0b7a35";
-    const head = d ? "#b8f0c8" : "#063e1b"; // dark head dimmed to keep muted text ≥ 4.5:1
+    const head = d ? "#d8ffe4" : "#063e1b";
     for (let i = 0; i < cols; i++) {
       const yPos = drops[i] * FONT;
       if (yPos > 0) {
         // bright leading glyph; the overpaint wash fades it into the trail colour
-        ctx.fillStyle = Math.random() < 0.12 ? head : glyph;
+        ctx.fillStyle = Math.random() < 0.18 ? head : glyph;
         ctx.fillText(MATRIX_GLYPHS[(Math.random() * MATRIX_GLYPHS.length) | 0], i * FONT, yPos);
       }
-      drops[i] = yPos > H && Math.random() > (f ? 0.6 : 0.975) ? 0 : drops[i] + (f ? 2.2 : 1);
+      drops[i] = yPos > H && Math.random() > (f ? 0.6 : 0.975) ? 0 : drops[i] + (f ? speeds[i] * 2.5 : speeds[i]);
     }
   }
   function start() { if (!RM.matches) { size(); requestAnimationFrame(tick); } }
@@ -1115,13 +1115,16 @@ const TITLE_TEXT = $("page-title").textContent; // captured before any scramble 
 // spent invisibly behind the overlay.
 
 /* ---------- occasional title glitch ---------- */
+function glitchTitle() {
+  const h = $("page-title");
+  h.classList.remove("glitching");
+  void h.offsetWidth; // restart cleanly if a glitch is already running
+  h.classList.add("glitching");
+  h.addEventListener("animationend", () => h.classList.remove("glitching"), { once: true });
+}
 (function scheduleGlitch() {
   setTimeout(() => {
-    if (anim()) {
-      const h = $("page-title");
-      h.classList.add("glitching");
-      h.addEventListener("animationend", () => h.classList.remove("glitching"), { once: true });
-    }
+    if (anim()) glitchTitle();
     scheduleGlitch();
   }, 8000 + Math.random() * 7000);
 })();
@@ -1146,7 +1149,8 @@ function toast(msg) {
 }
 $("egg").addEventListener("click", () => {
   if (!anim()) return;
-  rain.flood(2000, 0.28); // brief and readable: page text stays legible through it
+  rain.flood(3000, 0.45);
+  glitchTitle();
   toast("There is no spoon.");
 });
 
