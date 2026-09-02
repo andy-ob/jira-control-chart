@@ -50,6 +50,7 @@ issuesRaw.forEach(i => {
   issues.push({
     key: i.key, summary: i.summary, type: i.type,
     assignee: i.assignee, assigneeId: i.assigneeId,
+    epicKey: i.epicKey || null, epic: i.epic || null,
     created: i.created, resolved: i.resolved,
     status: i.status, statusCategory: i.statusCategory,
     resolution: i.resolution || null

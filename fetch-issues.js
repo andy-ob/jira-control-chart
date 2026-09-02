@@ -18,7 +18,7 @@ const startDate = new Date(Date.now() - WINDOW_DAYS * 86400000);
 const windowStart = new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/London" }).format(startDate);
 const jql = `project = ${PROJECT} AND statusCategory = Done AND resolved >= "${windowStart}" ORDER BY resolved ASC`;
 
-const FIELDS = "summary,issuetype,assignee,created,resolutiondate,status,resolution";
+const FIELDS = "summary,issuetype,assignee,created,resolutiondate,status,resolution,parent";
 const iso = t => (t ? new Date(t).toISOString() : null);
 
 async function searchAll() {
@@ -30,7 +30,13 @@ async function searchAll() {
     const j = await jiraFetch("/rest/api/3/search/jql?" + qs);
     for (const it of j.issues || []) {
       const f = it.fields || {};
+      // parent is the epic for tasks/stories/bugs; guard on type so a sub-task's
+      // story parent is never mistaken for an epic
+      const epic = f.parent && f.parent.fields && f.parent.fields.issuetype
+        && f.parent.fields.issuetype.name === "Epic" ? f.parent : null;
       records.push({
+        epicKey: epic ? epic.key : null,
+        epic: epic ? epic.fields.summary || null : null,
         key: it.key,
         summary: f.summary || "",
         type: (f.issuetype && f.issuetype.name) || "Unknown",

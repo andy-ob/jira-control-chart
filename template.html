@@ -26,6 +26,10 @@
     --accent-wash: rgba(42, 120, 214, 0.10);
     --outlier: #ec835a;
     --mx: #0b7a35;
+    /* categorical series (validated light steps, fixed order) */
+    --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+    --s5: #e87ba4; --s6: #008300; --s7: #4a3aa7; --s8: #e34948;
+    --cat-other: #87909a;
     --shadow: 0 1px 2px rgba(17, 22, 27, 0.05), 0 4px 16px rgba(17, 22, 27, 0.05);
   }
   @media (prefers-color-scheme: dark) {
@@ -45,6 +49,10 @@
       --accent-wash: rgba(57, 135, 229, 0.14);
       --outlier: #ec835a;
       --mx: #00ff41;
+      /* categorical series (validated dark steps, same fixed order) */
+      --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+      --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+      --cat-other: #8a9199;
       --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
     }
   }
@@ -64,6 +72,9 @@
     --accent-wash: rgba(57, 135, 229, 0.14);
     --outlier: #ec835a;
     --mx: #00ff41;
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+    --cat-other: #8a9199;
     --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 16px rgba(0, 0, 0, 0.25);
   }
 
@@ -233,8 +244,18 @@
   .card-head h2 { font-size: 15px; font-weight: 600; margin: 0; }
   .card-head .sub { font-size: 12.5px; color: var(--muted); }
 
-  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; padding: 10px 18px 0; font-size: 12px; color: var(--ink-2); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 10px 18px 0; font-size: 12px; color: var(--ink-2); }
   .legend .k { display: inline-flex; align-items: center; gap: 7px; }
+  /* clickable category chips: click to spotlight that assignee/epic on the chart */
+  .legend button.k {
+    font: inherit; color: var(--ink-2); background: transparent; border: 0;
+    border-radius: 6px; padding: 2px 6px; margin: -2px 0; cursor: pointer;
+    max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .legend button.k:hover { color: var(--ink); background: var(--surface-2); }
+  .legend button.k[aria-pressed="true"] { background: var(--surface-2); color: var(--ink); font-weight: 600; }
+  .legend button.k:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .legend .count { color: var(--muted); }
   .k .swatch-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--surface); }
   .k .swatch-dot.outlier { background: var(--outlier); }
   .k .swatch-line { width: 18px; height: 0; border-top: 2px solid var(--accent-deep); border-radius: 2px; }
@@ -261,6 +282,8 @@
   #chart .dot { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
   #chart .dot.outlier { fill: var(--outlier); }
   #chart a:focus-visible .dot, #chart a:focus .dot { stroke: var(--ink); stroke-width: 2.5; }
+  /* a focused dot must stay visible even when spotlight-dimmed (inline opacity) */
+  #chart a:focus-visible, #chart a:focus { opacity: 1 !important; }
   #chart a { cursor: pointer; outline: none; }
   .empty-note { padding: 40px 20px 50px; text-align: center; color: var(--muted); font-size: 14px; }
 
@@ -406,12 +429,20 @@
       </select>
     </div>
     <div class="field">
-      <label for="f-type">Issue type</label>
-      <select id="f-type"><option value="all">All types</option></select>
+      <label id="type-label">Issue types</label>
+      <div class="seg" role="group" aria-labelledby="type-label" id="f-type"></div>
     </div>
     <div class="field">
       <label for="f-assignee">Assignee</label>
       <select id="f-assignee"><option value="all">All assignees</option></select>
+    </div>
+    <div class="field">
+      <label for="f-color">Colour by</label>
+      <select id="f-color">
+        <option value="outlier">Slowest 15%</option>
+        <option value="assignee">Assignee</option>
+        <option value="epic">Epic</option>
+      </select>
     </div>
     <div class="field">
       <label for="f-start">Clock starts</label>
@@ -452,13 +483,7 @@
       <h2>Control chart</h2>
       <span class="sub" id="chart-sub"></span>
     </div>
-    <div class="legend" aria-hidden="false">
-      <span class="k"><span class="swatch-dot"></span>Completed issue</span>
-      <span class="k"><span class="swatch-dot outlier"></span>▲ Above 85th percentile</span>
-      <span class="k"><span class="swatch-line"></span>Rolling average (7 issues)</span>
-      <span class="k"><span class="swatch-band"></span>Mean ± 1σ</span>
-      <span class="k"><span class="swatch-p85"></span>85th percentile</span>
-    </div>
+    <div class="legend" id="legend"></div>
     <a class="skip-link" href="#issue-table">Skip chart, go to issues table</a>
     <div class="chart-scroll">
       <div class="chart-wrap" id="chart-wrap">
@@ -546,6 +571,7 @@ DATA.issues.forEach(i => {
   doneIssues.push({
     key: i.key, summary: i.summary, type: i.type,
     assignee: i.assignee || "Unassigned", assigneeId: i.assigneeId || "none",
+    epicKey: i.epicKey || null, epic: i.epic || null,
     created, doneAt, wipEntries, trs,
     resolution: i.resolution || null,
     url: SITE + "/browse/" + i.key
@@ -569,9 +595,20 @@ function startOf(issue, mode) {
 /* ---------- populate filter options ---------- */
 const $ = id => document.getElementById(id);
 $("f-range").querySelector('option[value="all"]').textContent = "Last " + WINDOW_DAYS + " days (full window)";
-const selType = $("f-type"), selAssignee = $("f-assignee"), selStart = $("f-start");
-[...new Set(doneIssues.map(i => i.type))].sort().forEach(t => {
-  const o = document.createElement("option"); o.value = t; o.textContent = t; selType.appendChild(o);
+const selAssignee = $("f-assignee"), selStart = $("f-start");
+// issue-type toggle chips: each type can be shown or hidden independently
+const TYPE_LIST = [...new Set(doneIssues.map(i => i.type))].sort();
+TYPE_LIST.forEach(t => {
+  const b = document.createElement("button");
+  b.type = "button"; b.textContent = t;
+  b.setAttribute("aria-pressed", "true");
+  b.addEventListener("click", () => {
+    const on = state.types.has(t);
+    if (on) state.types.delete(t); else state.types.add(t);
+    b.setAttribute("aria-pressed", String(!on));
+    renderAll();
+  });
+  $("f-type").appendChild(b);
 });
 const assignees = new Map();
 doneIssues.forEach(i => assignees.set(i.assigneeId, i.assignee));
@@ -593,7 +630,30 @@ if (!HAS_CHANGELOG) {
 }
 
 /* ---------- state ---------- */
-const state = { range: "all", type: "all", assignee: "all", start: HAS_CHANGELOG ? "__wip" : "__created", includeNoWip: false, workingDays: true, scale: "linear", sort: "completed", dir: -1 };
+const state = { range: "all", types: new Set(TYPE_LIST), assignee: "all", colorBy: "outlier", highlight: null, start: HAS_CHANGELOG ? "__wip" : "__created", includeNoWip: false, workingDays: true, scale: "linear", sort: "completed", dir: -1 };
+
+/* ---------- categorical colour maps ----------
+   Built once over the FULL dataset and ordered by global frequency, so slice
+   filters never repaint a surviving category. Top 8 take the validated series
+   slots in fixed order; everything else (and Unassigned / No epic) is grey. */
+function buildCats(keyOf, labelOf, noneLabel) {
+  const counts = new Map();
+  doneIssues.forEach(i => {
+    const k = keyOf(i);
+    if (k === null) return;
+    const e = counts.get(k) || { n: 0, label: labelOf(i) };
+    e.n++; counts.set(k, e);
+  });
+  // key tiebreak keeps the 8th colour stable when counts tie across daily refetches
+  const ordered = [...counts.entries()].sort((a, b) => b[1].n - a[1].n || (a[0] < b[0] ? -1 : 1));
+  const slots = new Map();
+  ordered.slice(0, 8).forEach(([k], idx) => slots.set(k, idx));
+  return { slots, ordered, noneLabel, keyOf };
+}
+const CATS = {
+  assignee: buildCats(i => i.assigneeId === "none" ? null : i.assigneeId, i => i.assignee, "Unassigned"),
+  epic: buildCats(i => i.epicKey, i => i.epic || i.epicKey, "No epic"),
+};
 
 /* ---------- helpers ---------- */
 const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -679,7 +739,7 @@ function computeSlice() {
   const rows = [];
   let excludedNoWip = 0;
   doneIssues.forEach(i => {
-    if (state.type !== "all" && i.type !== state.type) return;
+    if (!state.types.has(i.type)) return;
     if (state.assignee !== "all" && i.assigneeId !== state.assignee) return;
     if (rangeMs && i.doneAt < now - rangeMs) return;
     const noWip = HAS_CHANGELOG && i.wipEntries.length === 0;
@@ -860,11 +920,22 @@ function renderChart(sl, animate) {
     }
   }
   // dots (each an <a> with a generous transparent hit circle)
+  const cat = state.colorBy === "outlier" ? null : CATS[state.colorBy];
   sl.rows.forEach((r, idx) => {
     const a = svgEl("a", { href: r.url, target: "_blank", rel: "noopener" });
     if (animate) a.style.setProperty("--d", Math.round(idx / sl.rows.length * 600) + "ms");
     a.append(svgEl("circle", { cx: x(r.doneAt), cy: y(r.days), r: 13, fill: "transparent" }));
-    a.append(svgEl("circle", { cx: x(r.doneAt), cy: y(r.days), r: 4.5, class: "dot" + (r.outlier ? " outlier" : "") }));
+    const dot = svgEl("circle", { cx: x(r.doneAt), cy: y(r.days), r: 4.5, class: "dot" + (!cat && r.outlier ? " outlier" : "") });
+    if (cat) {
+      const k = cat.keyOf(r);
+      const slot = k === null ? undefined : cat.slots.get(k);
+      dot.style.fill = slot === undefined ? "var(--cat-other)" : "var(--s" + (slot + 1) + ")";
+      if (state.highlight !== null) {
+        const match = state.highlight === "__other" ? slot === undefined : k === state.highlight;
+        if (!match) a.style.opacity = "0.15";
+      }
+    }
+    a.append(dot);
     const title = svgEl("title", {});
     title.textContent = r.key + ": " + fmtDays(r.days) + " days";
     a.append(title);
@@ -876,6 +947,59 @@ function renderChart(sl, animate) {
   });
   $("chart-sub").textContent = sl.n + " completed issues · " + fmtDate(sl.x0) + " – " + fmtDate(sl.x1)
     + (sl.excludedNoWip ? " · " + sl.excludedNoWip + " excluded (went straight to Done)" : "");
+}
+
+/* ---------- legend ---------- */
+function renderLegend(sl) {
+  const lg = $("legend");
+  lg.textContent = "";
+  const key = (cls, text) => {
+    const s = document.createElement("span"); s.className = "k";
+    const sw = document.createElement("span"); sw.className = cls;
+    s.append(sw, text); lg.append(s);
+  };
+  const chip = (k, label, color, n) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "k";
+    b.dataset.key = k;
+    b.setAttribute("aria-pressed", String(state.highlight === k));
+    b.title = label + " · " + n + " in this slice · click to spotlight";
+    const sw = document.createElement("span"); sw.className = "swatch-dot"; sw.style.background = color;
+    const nm = document.createElement("span"); nm.textContent = label.length > 26 ? label.slice(0, 26) + "…" : label;
+    const ct = document.createElement("span"); ct.className = "count"; ct.textContent = " " + n;
+    b.append(sw, nm, ct);
+    b.addEventListener("click", () => {
+      state.highlight = state.highlight === k ? null : k;
+      // update pressed states in place — rebuilding would destroy the focused button
+      lg.querySelectorAll("button.k").forEach(btn =>
+        btn.setAttribute("aria-pressed", String(btn.dataset.key === String(state.highlight))));
+      renderChart(computeSlice(), false);
+    });
+    lg.append(b);
+  };
+  if (state.colorBy === "outlier") {
+    key("swatch-dot", "Completed issue");
+    key("swatch-dot outlier", "▲ Above 85th percentile");
+  } else {
+    // colours are assigned globally (stable across filters); the displayed
+    // counts describe the current slice, matching the chart
+    const cat = CATS[state.colorBy];
+    const sliceCounts = new Map();
+    sl.rows.forEach(r => {
+      const k = cat.keyOf(r);
+      sliceCounts.set(k, (sliceCounts.get(k) || 0) + 1);
+    });
+    let otherN = sl.rows.length;
+    cat.ordered.slice(0, 8).forEach(([k, v], idx) => {
+      const n = sliceCounts.get(k) || 0;
+      otherN -= n;
+      chip(k, v.label, "var(--s" + (idx + 1) + ")", n);
+    });
+    chip("__other", "Other / " + cat.noneLabel, "var(--cat-other)", otherN);
+  }
+  key("swatch-line", "Rolling average (7 issues)");
+  key("swatch-band", "Mean ± 1σ");
+  key("swatch-p85", "85th percentile");
 }
 
 /* ---------- tooltip ---------- */
@@ -891,6 +1015,8 @@ function showTip(r, px, py) {
   const s = document.createElement("div"); s.className = "tt-summary";
   s.textContent = r.summary.length > 90 ? r.summary.slice(0, 90) + "…" : r.summary;
   const m1 = document.createElement("div"); m1.className = "tt-meta"; m1.textContent = r.type + " · " + r.assignee;
+  const mE = document.createElement("div"); mE.className = "tt-meta";
+  mE.textContent = r.epic ? "Epic: " + (r.epic.length > 60 ? r.epic.slice(0, 60) + "…" : r.epic) : "No epic";
   const m2 = document.createElement("div"); m2.className = "tt-meta";
   m2.textContent = fmtDate(r.startAt) + " (" + r.startLabel + ") → " + fmtDate(r.doneAt);
   const mAlt = document.createElement("div"); mAlt.className = "tt-meta";
@@ -900,7 +1026,10 @@ function showTip(r, px, py) {
   const m3 = document.createElement("div"); m3.className = "tt-meta";
   if (r.resolution && !/^done$/i.test(r.resolution)) m3.textContent = "Resolution: " + r.resolution;
   const h = document.createElement("div"); h.className = "tt-hint"; h.textContent = "Click to open in Jira";
-  tip.append(v, k, s, m1, m2, mAlt, m3, h);
+  const parts = [v, k, s, m1];
+  if (r.type !== "Epic") parts.push(mE); // an epic has no parent epic — "No epic" would read as missing data
+  parts.push(m2, mAlt, m3, h);
+  tip.append(...parts);
   tip.style.display = "block";
   if (anim()) scramble(v.firstChild, v.textContent, "0123456789", 160);
   const wrap = $("chart-wrap");
@@ -987,13 +1116,24 @@ function renderProvenance() {
 /* ---------- wiring ---------- */
 function renderAll(animate = true) {
   const sl = computeSlice();
+  // a filter change can empty the spotlighted category; clear rather than
+  // rendering a uniformly dimmed chart with nothing highlighted
+  if (state.colorBy !== "outlier" && state.highlight !== null) {
+    const cat = CATS[state.colorBy];
+    const matches = sl.rows.some(r => {
+      const k = cat.keyOf(r);
+      return state.highlight === "__other" ? (k === null || !cat.slots.has(k)) : k === state.highlight;
+    });
+    if (!matches) state.highlight = null;
+  }
   renderTiles(sl, animate && anim());
   renderChart(sl, animate && anim());
   renderTable(sl, animate && anim());
+  renderLegend(sl);
 }
 $("f-range").addEventListener("change", e => { state.range = e.target.value; renderAll(); });
-$("f-type").addEventListener("change", e => { state.type = e.target.value; renderAll(); });
 $("f-assignee").addEventListener("change", e => { state.assignee = e.target.value; renderAll(); });
+$("f-color").addEventListener("change", e => { state.colorBy = e.target.value; state.highlight = null; renderAll(); });
 $("f-start").addEventListener("change", e => { state.start = e.target.value; renderAll(); });
 $("f-nowip").addEventListener("change", e => { state.includeNoWip = e.target.checked; renderAll(); });
 $("days-working").addEventListener("click", () => setDayCount(true));
