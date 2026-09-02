@@ -4,7 +4,7 @@ Interactive cycle-time control chart for the [CPAO board](https://twinkl.atlassi
 rebuilt from the Jira REST API on a rolling 90-day window and published on GitHub Pages.
 
 A scheduled GitHub Actions workflow ([update-dashboard.yml](.github/workflows/update-dashboard.yml))
-refreshes the data every weekday at 05:30 UTC: it fetches the issues completed in the
+refreshes the data every weekday at 07:30 UTC (08:30 UK in summer): it fetches the issues completed in the
 last 90 days, pulls each issue's status history, rebuilds the page, and deploys it to
 Pages. It can also be run on demand from the Actions tab, and runs on every push to main.
 
