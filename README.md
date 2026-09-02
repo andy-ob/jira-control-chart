@@ -58,6 +58,12 @@ skips quietly if the webhook secret is missing.
 
 - Webhook: repository secret `GCHAT_WEBHOOK_URL` (locally: a `.gchat-webhook`
   file in this folder, gitignored).
+- Mentions: Chat webhooks only resolve numeric `<users/ID>` mentions, so the
+  `GCHAT_USER_MAP` secret holds a JSON map of Jira email → Google user ID
+  (locally: `.gchat-users`, gitignored). Unmapped assignees appear as a bold
+  name without a ping. To add someone, get their ID from the space membership
+  (the Chat API `spaces.members` list shows email and ID; asking Claude to
+  refresh the map is the quick way) and update the secret.
 - Threshold: `WIP_THRESHOLD_DAYS` in the workflow (default 5).
 - Test locally with `DRY_RUN=1 node notify.js` (prints instead of posting) —
   never in CI, where logs are public.

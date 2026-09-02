@@ -78,6 +78,7 @@ jobs:
           ATLASSIAN_EMAIL: ${{ secrets.ATLASSIAN_EMAIL }}
           ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
           GCHAT_WEBHOOK_URL: ${{ secrets.GCHAT_WEBHOOK_URL }}
+          GCHAT_USER_MAP: ${{ secrets.GCHAT_USER_MAP }}
           WIP_THRESHOLD_DAYS: "5"
 
   deploy:

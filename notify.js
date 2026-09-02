@@ -29,6 +29,22 @@ function webhookUrl() {
   return null;
 }
 
+// email → numeric Google user ID. Chat webhooks only resolve <users/ID>
+// mentions (verified live: the email form renders as literal text), and the
+// webhook itself can't look IDs up, so they're maintained as a small map:
+// GCHAT_USER_MAP secret in CI, .gchat-users JSON file locally. Unmapped
+// assignees fall back to a bold name (visible, but no ping).
+function userMap() {
+  try {
+    if (process.env.GCHAT_USER_MAP) return JSON.parse(process.env.GCHAT_USER_MAP);
+    const f = path.join(__dirname, ".gchat-users");
+    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, "utf8"));
+  } catch (e) {
+    console.error("Ignoring unparseable user map: " + e.message);
+  }
+  return {};
+}
+
 // Working days between two timestamps: whole Saturdays/Sundays removed,
 // UTC day boundaries — the same rules the dashboard uses.
 function weekendMs(from, to) {
@@ -180,8 +196,10 @@ const trunc = (s, n) => (s.length > n ? s.slice(0, n) + "…" : s);
   let used = lines.join("\n").length;
   let shown = 0;
   const SUFFIX_ROOM = 30; // space held back for the "…and N more." line
+  const USERS = userMap();
   outer: for (const g of ordered) {
-    const header = g.email ? "<users/" + g.email + ">" : "*" + clean(g.name || "Unassigned") + "*";
+    const id = g.email && USERS[g.email];
+    const header = id ? "<users/" + id + ">" : "*" + clean(g.name || "Unassigned") + "*";
     if (used + header.length + fmtTicket(g.tickets[0]).length + SUFFIX_ROOM > CHAR_BUDGET) break;
     lines.push(header); used += header.length + 1;
     for (const t of g.tickets) {
