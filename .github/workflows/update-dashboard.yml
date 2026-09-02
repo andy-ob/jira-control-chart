@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "30 5 * * 1-5" # 05:30 UTC every weekday, before the working day starts
   workflow_dispatch:
+    inputs:
+      post_digest:
+        description: "Also post the aging-WIP digest to Google Chat"
+        type: boolean
+        default: false
   push:
     branches: [main]
 
@@ -51,6 +56,29 @@ jobs:
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
           path: _site
+
+  notify:
+    name: Aging WIP Digest
+    # daily digest on the schedule only — a manual dashboard refresh must not
+    # re-ping people unless explicitly asked to via the dispatch input
+    if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.post_digest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read # no Pages/OIDC permissions needed here
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Setup Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+      - name: Post digest to Google Chat
+        run: node notify.js
+        env:
+          ATLASSIAN_EMAIL: ${{ secrets.ATLASSIAN_EMAIL }}
+          ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
+          GCHAT_WEBHOOK_URL: ${{ secrets.GCHAT_WEBHOOK_URL }}
+          WIP_THRESHOLD_DAYS: "5"
 
   deploy:
     name: Deploy to Pages

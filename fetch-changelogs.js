@@ -5,7 +5,7 @@
 // Auth: see lib.js (env vars in CI, .atlassian-token locally).
 const fs = require("fs");
 const path = require("path");
-const { jiraFetch } = require("./lib");
+const { changelog } = require("./lib");
 
 const dataDir = path.join(__dirname, "data");
 
@@ -21,23 +21,6 @@ if (!uniq.length) {
   process.exit(1);
 }
 console.log("Fetching status history for", uniq.length, "issues…");
-
-async function changelog(key) {
-  let startAt = 0;
-  const out = [];
-  for (;;) {
-    const j = await jiraFetch(`/rest/api/3/issue/${key}/changelog?startAt=${startAt}&maxResults=100`);
-    for (const h of j.values || []) {
-      for (const it of h.items || []) {
-        // ISO-UTC timestamp: browser Date parsing of Jira's "+0100" form is not guaranteed
-        if (it.field === "status") out.push([it.fromString, it.toString, new Date(h.created).toISOString()]);
-      }
-    }
-    if (j.isLast !== false || !(j.values || []).length) break;
-    startAt += j.values.length;
-  }
-  return out;
-}
 
 (async () => {
   const results = [];

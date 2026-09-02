@@ -1,4 +1,5 @@
 .atlassian-token
+.gchat-webhook
 *.token
 .env*
 

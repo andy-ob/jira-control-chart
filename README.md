@@ -48,6 +48,20 @@ The fetch scripts read `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` from the envi
 The file is gitignored. Never commit or paste the token anywhere else. If it is ever
 exposed, revoke it at id.atlassian.com immediately — deleting the file is not enough.
 
+## Aging WIP digest (Google Chat)
+
+Alongside each scheduled refresh, `notify.js` posts a digest to a Google Chat
+space: every issue in progress for more than 5 working days (the same
+working-day and clock-start rules as the chart), grouped by assignee with an
+@mention. Nothing is posted when no issue is over the threshold, and the job
+skips quietly if the webhook secret is missing.
+
+- Webhook: repository secret `GCHAT_WEBHOOK_URL` (locally: a `.gchat-webhook`
+  file in this folder, gitignored).
+- Threshold: `WIP_THRESHOLD_DAYS` in the workflow (default 5).
+- Test locally with `DRY_RUN=1 node notify.js` (prints instead of posting) —
+  never in CI, where logs are public.
+
 ## Publishing notes
 
 The published page is a static snapshot: it contains the issue data baked in, and a

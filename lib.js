@@ -55,4 +55,23 @@ async function jiraFetch(pathname, init = {}) {
   }
 }
 
-module.exports = { SITE, jiraFetch };
+// Full status-transition history for one issue: [[from, to, atISO], ...].
+// Timestamps are normalised to ISO UTC (browser Date parsing of Jira's
+// "+0100" form is not guaranteed).
+async function changelog(key) {
+  let startAt = 0;
+  const out = [];
+  for (;;) {
+    const j = await jiraFetch(`/rest/api/3/issue/${key}/changelog?startAt=${startAt}&maxResults=100`);
+    for (const h of j.values || []) {
+      for (const it of h.items || []) {
+        if (it.field === "status") out.push([it.fromString, it.toString, new Date(h.created).toISOString()]);
+      }
+    }
+    if (j.isLast !== false || !(j.values || []).length) break;
+    startAt += j.values.length;
+  }
+  return out;
+}
+
+module.exports = { SITE, jiraFetch, changelog };
