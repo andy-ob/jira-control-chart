@@ -73,7 +73,22 @@
     line-height: 1.45;
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 24px 48px; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 28px 24px 48px; position: relative; z-index: 1; }
+
+  /* ---------- matrix rain ---------- */
+  #matrix-rain {
+    position: fixed; inset: 0; width: 100%; height: 100%; /* canvas is replaced content: inset alone doesn't size it */
+    z-index: 0; pointer-events: none;
+    opacity: 0.10;
+  }
+  /* dark opacity chosen so muted 12px text above a glyph column stays ≥ 4.5:1 */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) #matrix-rain { opacity: 0.12; }
+  }
+  :root[data-theme="dark"] #matrix-rain { opacity: 0.12; }
+  @media (prefers-reduced-motion: reduce) {
+    #matrix-rain { display: none; }
+  }
 
   /* ---------- header ---------- */
   header.masthead {
@@ -252,10 +267,33 @@
 
   @media (prefers-reduced-motion: no-preference) {
     .tile, .card { transition: border-color 120ms ease; }
+    /* chart entrance animations — applied only while #chart carries .anim,
+       so resize re-renders don't replay them */
+    #chart.anim a .dot {
+      animation: dot-in 260ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
+      animation-delay: var(--d, 0ms);
+    }
+    #chart.anim .guide { animation: fade-in 500ms 200ms both; }
+    #chart.anim .roll {
+      stroke-dasharray: var(--len);
+      stroke-dashoffset: var(--len);
+      animation: draw-line 900ms 250ms ease forwards;
+    }
+    .cursor {
+      display: inline-block; margin-left: 2px; color: var(--accent);
+      animation: blink 1.1s step-end infinite;
+      user-select: none; -webkit-user-select: none;
+    }
   }
+  @keyframes dot-in { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: none; } }
+  @keyframes fade-in { from { opacity: 0; } }
+  @keyframes draw-line { to { stroke-dashoffset: 0; } }
+  @keyframes blink { 50% { opacity: 0; } }
 </style>
 </head>
 <body>
+
+<canvas id="matrix-rain" aria-hidden="true"></canvas>
 
 <div class="wrap">
   <header class="masthead">
@@ -383,6 +421,12 @@ const PROJECT_TOTALS = META.projectTotals;
 const SITE = "https://twinkl.atlassian.net";
 const BOARD_URL = "https://twinkl.atlassian.net/jira/software/c/projects/CPAO/boards/2286";
 const DAY = 86400000;
+// Read at use time (not snapshotted) so flipping the OS setting mid-session takes effect
+const RM = window.matchMedia("(prefers-reduced-motion: reduce)");
+const anim = () => !RM.matches;
+const MATRIX_GLYPHS = "アィウェオカキクケコサシスセソタチツテトナニヌネノハヒフヘホ0123456789<>*+=";
+// Latin set for text that affects layout: katakana fallback glyphs are double-width
+const LATIN_GLYPHS = "abcdefghjkmnpqrstuvwxyz0123456789<>*+";
 const HAS_CHANGELOG = Object.keys(DATA.transitions).length > 0;
 const METRIC = HAS_CHANGELOG ? "cycle time" : "lead time";
 
@@ -510,6 +554,20 @@ function svgEl(tag, attrs) {
   for (const k in attrs) e.setAttribute(k, attrs[k]);
   return e;
 }
+/* Matrix-style decode: a text node resolves left-to-right out of random glyphs.
+   Purely cosmetic — the final text is set immediately on the last frame. */
+function scramble(node, final, glyphs, dur = 450) {
+  if (!node || node.nodeType !== 3) return;
+  const t0 = performance.now();
+  (function frame(now) {
+    const p = Math.min((now - t0) / dur, 1);
+    const keep = Math.floor(final.length * p);
+    let s = final.slice(0, keep);
+    for (const ch of final.slice(keep)) s += /\s/.test(ch) ? ch : glyphs[(Math.random() * glyphs.length) | 0];
+    node.nodeValue = s;
+    if (p < 1) requestAnimationFrame(frame);
+  })(t0);
+}
 
 /* ---------- slice computation ---------- */
 function computeSlice() {
@@ -551,7 +609,7 @@ function computeSlice() {
 }
 
 /* ---------- stat tiles ---------- */
-function renderTiles(sl) {
+function renderTiles(sl, animate) {
   const put = (id, html) => { $(id).textContent = ""; $(id).append(html); };
   function valueNode(v, unit) {
     const frag = document.createDocumentFragment();
@@ -584,14 +642,23 @@ function renderTiles(sl) {
   sub.append(sp, document.createTextNode("completions over range"));
   put("v-count", valueNode(String(sl.n), ""));
   $("s-count").textContent = "issues in selected slice";
+  if (animate) {
+    ["v-median", "v-p85", "v-thru", "v-count"].forEach(id => {
+      const n = $(id).firstChild;
+      if (n && n.nodeType === 3) scramble(n, n.nodeValue, "0123456789");
+    });
+  }
 }
 
 /* ---------- chart ---------- */
-function renderChart(sl) {
+let lastChartW = 0;
+function renderChart(sl, animate) {
   const svg = $("chart"), wrap = $("chart-wrap");
+  svg.classList.toggle("anim", !!animate);
   svg.textContent = "";
   const old = wrap.querySelector(".empty-note"); if (old) old.remove();
   const W = Math.max(wrap.clientWidth - 20, 640), H = 400;
+  lastChartW = W;
   const M = { l: 52, r: 24, t: 18, b: 40 };
   svg.setAttribute("viewBox", "0 0 " + W + " " + H);
   svg.setAttribute("width", W); svg.setAttribute("height", H);
@@ -661,26 +728,33 @@ function renderChart(sl) {
     // sigma band
     const bandTop = y(sl.mean + sl.sd);
     const bandBot = Math.min(y(Math.max(sl.mean - sl.sd, 0.005)), H - M.b);
-    svg.append(svgEl("rect", { x: M.l, y: bandTop, width: iw, height: Math.max(bandBot - bandTop, 0), fill: "var(--accent-wash)" }));
+    svg.append(svgEl("rect", { x: M.l, y: bandTop, width: iw, height: Math.max(bandBot - bandTop, 0), fill: "var(--accent-wash)", class: "guide" }));
     // mean line
-    svg.append(svgEl("line", { x1: M.l, x2: W - M.r, y1: y(sl.mean), y2: y(sl.mean), stroke: "var(--accent)", "stroke-width": 1.5, opacity: 0.85 }));
-    const meanLbl = svgEl("text", { x: W - M.r - 4, y: y(sl.mean) - 5, "text-anchor": "end", class: "guide-label" });
+    svg.append(svgEl("line", { x1: M.l, x2: W - M.r, y1: y(sl.mean), y2: y(sl.mean), stroke: "var(--accent)", "stroke-width": 1.5, opacity: 0.85, class: "guide" }));
+    const meanLbl = svgEl("text", { x: W - M.r - 4, y: y(sl.mean) - 5, "text-anchor": "end", class: "guide-label guide" });
     meanLbl.textContent = "mean " + fmtDays(sl.mean) + "d";
     svg.append(meanLbl);
     // p85 line (dashed threshold)
-    svg.append(svgEl("line", { x1: M.l, x2: W - M.r, y1: y(sl.p85), y2: y(sl.p85), stroke: "var(--muted)", "stroke-width": 1.5, "stroke-dasharray": "5 4" }));
-    const pLbl = svgEl("text", { x: M.l + 4, y: y(sl.p85) - 5, class: "guide-label" });
+    svg.append(svgEl("line", { x1: M.l, x2: W - M.r, y1: y(sl.p85), y2: y(sl.p85), stroke: "var(--muted)", "stroke-width": 1.5, "stroke-dasharray": "5 4", class: "guide" }));
+    const pLbl = svgEl("text", { x: M.l + 4, y: y(sl.p85) - 5, class: "guide-label guide" });
     pLbl.textContent = "85% ≤ " + fmtDays(sl.p85) + "d";
     svg.append(pLbl);
     // rolling average
     if (sl.rows.length >= 3) {
       const path = sl.rows.map((r, i) => (i ? "L" : "M") + x(r.doneAt).toFixed(1) + " " + y(r.roll).toFixed(1)).join(" ");
-      svg.append(svgEl("path", { d: path, fill: "none", stroke: "var(--accent-deep)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", opacity: 0.9 }));
+      const rollEl = svgEl("path", { d: path, fill: "none", stroke: "var(--accent-deep)", "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round", opacity: 0.9 });
+      svg.append(rollEl);
+      if (animate) {
+        // draw-on effect needs the real length; set after append so it can be measured
+        rollEl.classList.add("roll");
+        rollEl.style.setProperty("--len", rollEl.getTotalLength());
+      }
     }
   }
   // dots (each an <a> with a generous transparent hit circle)
-  sl.rows.forEach(r => {
+  sl.rows.forEach((r, idx) => {
     const a = svgEl("a", { href: r.url, target: "_blank", rel: "noopener" });
+    if (animate) a.style.setProperty("--d", Math.round(idx / sl.rows.length * 600) + "ms");
     a.append(svgEl("circle", { cx: x(r.doneAt), cy: y(r.days), r: 13, fill: "transparent" }));
     a.append(svgEl("circle", { cx: x(r.doneAt), cy: y(r.days), r: 4.5, class: "dot" + (r.outlier ? " outlier" : "") }));
     const title = svgEl("title", {});
@@ -787,14 +861,20 @@ function renderProvenance() {
   const p3 = document.createElement("p");
   p3.textContent = "Issue and board links require Twinkl Atlassian access; a 403 means you're not signed in, not a broken link. Percentiles, mean, σ and the rolling average are recomputed live for whatever slice the filters select, in whichever day count is selected. Working days subtract whole Saturdays and Sundays from the measured interval; public holidays and working hours are not modelled, so an overnight Tuesday-to-Wednesday handover still counts as roughly one day. Day boundaries are evaluated in UTC, so every viewer sees the same numbers.";
   p.append(p1, p2, p3);
-  $("fetched-note").textContent = "Updated " + fetchedLbl + " · completions since " + fmtLong(WINDOW_START);
+  const note = $("fetched-note");
+  note.textContent = "Updated " + fetchedLbl + " · completions since " + fmtLong(WINDOW_START);
+  if (anim()) {
+    const c = document.createElement("span");
+    c.className = "cursor"; c.textContent = "▌"; c.setAttribute("aria-hidden", "true");
+    note.append(c);
+  }
 }
 
 /* ---------- wiring ---------- */
-function renderAll() {
+function renderAll(animate = true) {
   const sl = computeSlice();
-  renderTiles(sl);
-  renderChart(sl);
+  renderTiles(sl, animate && anim());
+  renderChart(sl, animate && anim());
   renderTable(sl);
 }
 $("f-range").addEventListener("change", e => { state.range = e.target.value; renderAll(); });
@@ -825,10 +905,74 @@ $("sort-days").addEventListener("click", () => {
   state.dir = state.sort === "days" ? -state.dir : -1; state.sort = "days"; renderTable(computeSlice());
 });
 let resizeT;
-window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(renderAll, 150); });
+window.addEventListener("resize", () => {
+  clearTimeout(resizeT);
+  resizeT = setTimeout(() => {
+    // Skip when the chart width is unchanged (scrollbar toggles, mobile URL-bar
+    // height changes) so entrance animations aren't cut short by a re-render.
+    const w = Math.max($("chart-wrap").clientWidth - 20, 640);
+    if (w !== lastChartW) renderAll(false);
+  }, 150);
+});
+
+/* ---------- matrix rain background ---------- */
+(function () {
+  const cv = document.getElementById("matrix-rain");
+  const ctx = cv.getContext("2d");
+  const FONT = 16;
+  const dark = window.matchMedia("(prefers-color-scheme: dark)");
+  // Match the CSS: an explicit data-theme on :root wins over the OS scheme
+  // (the artifact copy of this page stamps it; a mismatch here would slowly
+  // paint an opaque wrong-colour sheet through the translucent trail wash).
+  const isDark = () => {
+    const t = document.documentElement.getAttribute("data-theme");
+    return t ? t === "dark" : dark.matches;
+  };
+  let cols = 0, drops = [], W = 0, H = 0;
+  function size() {
+    if (window.innerWidth === W && window.innerHeight === H) return;
+    const widthChanged = window.innerWidth !== W;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    W = window.innerWidth; H = window.innerHeight;
+    cv.width = W * dpr; cv.height = H * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // Webfonts have no katakana and resolve late; a plain monospace keeps glyphs stable
+    ctx.font = FONT + "px ui-monospace, monospace";
+    cols = Math.ceil(W / FONT);
+    // Keep falling columns where they are; only add fresh ones on width growth,
+    // so mobile URL-bar height changes don't restart the whole effect.
+    if (widthChanged || !drops.length) {
+      const old = drops;
+      drops = Array.from({ length: cols }, (_, i) => old[i] !== undefined ? old[i] : Math.random() * -H / FONT);
+    }
+  }
+  let sizeT;
+  window.addEventListener("resize", () => { clearTimeout(sizeT); sizeT = setTimeout(size, 150); });
+  let last = 0;
+  function tick(now) {
+    if (RM.matches) return; // reduce-motion switched on mid-session: stop the loop
+    requestAnimationFrame(tick);
+    if (now - last < 50) return; // ~20fps: the authentic cadence, and easy on batteries
+    last = now;
+    const d = isDark();
+    // translucent overpaint of the page colour leaves fading trails behind each glyph
+    ctx.fillStyle = d ? "rgba(13, 15, 18, 0.2)" : "rgba(244, 246, 248, 0.2)";
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = d ? "#00ff41" : "#0b7a35";
+    for (let i = 0; i < cols; i++) {
+      const yPos = drops[i] * FONT;
+      if (yPos > 0) ctx.fillText(MATRIX_GLYPHS[(Math.random() * MATRIX_GLYPHS.length) | 0], i * FONT, yPos);
+      drops[i] = yPos > H && Math.random() > 0.975 ? 0 : drops[i] + 1;
+    }
+  }
+  function start() { if (!RM.matches) { size(); requestAnimationFrame(tick); } }
+  RM.addEventListener("change", e => { if (!e.matches) start(); });
+  start();
+})();
 
 renderProvenance();
 renderAll();
+if (anim()) scramble($("page-title").firstChild, $("page-title").textContent, LATIN_GLYPHS, 900);
 </script>
 </body>
 </html>
