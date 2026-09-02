@@ -41,6 +41,8 @@ jobs:
           ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
       - name: Build dashboard
         run: node build.js
+      - name: Verify build
+        run: node test.js
       - name: Stage site
         run: mkdir -p _site && cp dashboard.html _site/index.html
       - name: Configure Pages

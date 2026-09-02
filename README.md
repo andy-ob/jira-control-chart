@@ -24,6 +24,7 @@ Defaults, both switchable in the page's filter row:
   totals → `data/cpao-win-1.jsonl` + `data/meta.json`.
 - `fetch-changelogs.js` — pulls per-issue status history → `data/cpao-log-1.jsonl`.
 - `lib.js` — shared credential handling and retrying Jira fetch.
+- `test.js` — post-build smoke test; CI runs it before deploying.
 - `dashboard.html`, `data/` — generated; gitignored, never committed.
 
 ## Running locally
@@ -56,3 +57,7 @@ only the code). Issue links on the page still require Twinkl Atlassian access to
 
 To change the window, set `WINDOW_DAYS` when running `fetch-issues.js`; every label,
 date and the provenance JQL on the page follow the fetched metadata automatically.
+
+GitHub automatically disables scheduled workflows in public repos after 60 days
+without repository activity; it emails a warning first, and the schedule can be
+re-enabled with one click on the Actions tab (or kept alive by any commit).

@@ -6,7 +6,8 @@
   "scripts": {
     "fetch": "node fetch-issues.js && node fetch-changelogs.js",
     "build": "node build.js",
-    "refresh": "npm run fetch && npm run build"
+    "test": "node test.js",
+    "refresh": "npm run fetch && npm run build && npm test"
   },
   "engines": {
     "node": ">=18"
