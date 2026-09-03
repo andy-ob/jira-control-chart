@@ -8,8 +8,10 @@ refreshes the data every weekday at 07:30 UTC (08:30 UK in summer): it fetches t
 last 90 days, pulls each issue's status history, rebuilds the page, and deploys it to
 Pages. It can also be run on demand from the Actions tab, and runs on every push to main.
 
-Defaults, both switchable in the page's filter row:
+Defaults, all switchable in the page's filter row:
 
+- Epics are hidden (the Epic type chip starts off), matching the team's
+  "Ignore Epics" quick filter in Jira.
 - Issues that never entered an in-progress status (To Do straight to Done) are excluded,
   with the excluded count shown on the chart.
 - Time is measured in **working days**: whole Saturdays and Sundays are subtracted from

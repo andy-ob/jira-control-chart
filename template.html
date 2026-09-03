@@ -601,7 +601,9 @@ const TYPE_LIST = [...new Set(doneIssues.map(i => i.type))].sort();
 TYPE_LIST.forEach(t => {
   const b = document.createElement("button");
   b.type = "button"; b.textContent = t;
-  b.setAttribute("aria-pressed", "true");
+  // epics are umbrella containers with months-long cycle times; off by default,
+  // matching the team's "Ignore Epics" quick filter in Jira
+  b.setAttribute("aria-pressed", String(t !== "Epic"));
   b.addEventListener("click", () => {
     const on = state.types.has(t);
     if (on) state.types.delete(t); else state.types.add(t);
@@ -630,7 +632,7 @@ if (!HAS_CHANGELOG) {
 }
 
 /* ---------- state ---------- */
-const state = { range: "all", types: new Set(TYPE_LIST), assignee: "all", colorBy: "outlier", highlight: null, start: HAS_CHANGELOG ? "__wip" : "__created", includeNoWip: false, workingDays: true, scale: "linear", sort: "completed", dir: -1 };
+const state = { range: "all", types: new Set(TYPE_LIST.filter(t => t !== "Epic")), assignee: "all", colorBy: "outlier", highlight: null, start: HAS_CHANGELOG ? "__wip" : "__created", includeNoWip: false, workingDays: true, scale: "linear", sort: "completed", dir: -1 };
 
 /* ---------- categorical colour maps ----------
    Built once over the FULL dataset and ordered by global frequency, so slice
@@ -1102,7 +1104,7 @@ function renderProvenance() {
   const p2 = document.createElement("p");
   p2.textContent = "Project context: CPAO holds " + PROJECT_TOTALS.all.toLocaleString() + " issues all-time, " + PROJECT_TOTALS.doneLast12Months.toLocaleString() + " of them completed in the 12 months to " + fetchedLbl + ". This page charts the " + WINDOW_DAYS + "-day window only, the timeframe Jira's own control chart defaults to.";
   const p3 = document.createElement("p");
-  p3.textContent = "Issue and board links require Twinkl Atlassian access; a 403 means you're not signed in, not a broken link. Percentiles, mean, σ and the rolling average are recomputed live for whatever slice the filters select, in whichever day count is selected. Working days subtract whole Saturdays and Sundays from the measured interval; public holidays and working hours are not modelled, so an overnight Tuesday-to-Wednesday handover still counts as roughly one day. Day boundaries are evaluated in UTC, so every viewer sees the same numbers.";
+  p3.textContent = "Issue and board links require Twinkl Atlassian access; a 403 means you're not signed in, not a broken link. Percentiles, mean, σ and the rolling average are recomputed live for whatever slice the filters select, in whichever day count is selected. Working days subtract whole Saturdays and Sundays from the measured interval; public holidays and working hours are not modelled, so an overnight Tuesday-to-Wednesday handover still counts as roughly one day. Day boundaries are evaluated in UTC, so every viewer sees the same numbers. Counts here read lower than Jira's control chart by design: this page plots completed issues once each, while Jira also plots unfinished tickets every time they leave the board's in-progress columns.";
   p.append(p1, p2, p3);
   const note = $("fetched-note");
   note.textContent = "Updated " + fetchedLbl + " · completions since " + fmtLong(WINDOW_START);
