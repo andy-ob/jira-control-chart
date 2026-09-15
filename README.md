@@ -63,10 +63,12 @@ webhook is configured; in CI a missing secret fails the job so the gap is visibl
 - **Aging WIP** (`notify.js`): every issue in progress for more than 5 working days
   (the same working-day and clock-start rules as the chart), grouped by assignee with
   an @mention.
-- **Tickets without an epic** (`notify-epics.js`): every non-epic ticket that is in an
-  open sprint or in an in-progress status but has no parent epic, grouped by assignee
-  with an @mention, oldest first. The rest of the backlog is not listed, only counted
-  in a closing line, so the message stays an alert rather than a grooming list.
+- **Tickets without an epic** (`notify-epics.js`): every non-epic ticket that is In
+  Progress, In Review, Reviewed, or Done within the last 14 days but has no parent
+  epic, grouped by assignee with an @mention, oldest first. The backlog (To Do, In
+  Discussion) is not listed, only counted in a closing line, so the message stays an
+  alert rather than a grooming list. Statuses and the Done window are constants at the
+  top of the script.
 
 Shared configuration, handled by `chat.js`:
 
