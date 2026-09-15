@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       post_digest:
-        description: "Also post the aging-WIP digest to Google Chat"
+        description: "Also post the Google Chat digests (aging WIP, tickets without an epic)"
         type: boolean
         default: false
   push:
@@ -48,6 +48,8 @@ jobs:
         run: node build.js
       - name: Verify build
         run: node test.js
+      - name: Test Chat helpers
+        run: node test-chat.js
       - name: Stage site
         run: mkdir -p _site && cp dashboard.html _site/index.html
       - name: Configure Pages
@@ -58,8 +60,8 @@ jobs:
           path: _site
 
   notify:
-    name: Aging WIP Digest
-    # daily digest on the schedule only — a manual dashboard refresh must not
+    name: Google Chat Digests
+    # daily digests on the schedule only — a manual dashboard refresh must not
     # re-ping people unless explicitly asked to via the dispatch input
     if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.post_digest)
     runs-on: ubuntu-latest
@@ -72,7 +74,7 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24
-      - name: Post digest to Google Chat
+      - name: Post aging-WIP digest
         run: node notify.js
         env:
           ATLASSIAN_EMAIL: ${{ secrets.ATLASSIAN_EMAIL }}
@@ -80,6 +82,15 @@ jobs:
           GCHAT_WEBHOOK_URL: ${{ secrets.GCHAT_WEBHOOK_URL }}
           GCHAT_USER_MAP: ${{ secrets.GCHAT_USER_MAP }}
           WIP_THRESHOLD_DAYS: "5"
+      - name: Post no-epic digest
+        # still runs when the aging digest failed, so one bad post can't hide the other
+        if: ${{ !cancelled() }}
+        run: node notify-epics.js
+        env:
+          ATLASSIAN_EMAIL: ${{ secrets.ATLASSIAN_EMAIL }}
+          ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
+          GCHAT_WEBHOOK_URL: ${{ secrets.GCHAT_WEBHOOK_URL }}
+          GCHAT_USER_MAP: ${{ secrets.GCHAT_USER_MAP }}
 
   deploy:
     name: Deploy to Pages

@@ -25,8 +25,12 @@ Defaults, all switchable in the page's filter row:
 - `fetch-issues.js` — pulls the completed issues for the rolling window and the project
   totals → `data/cpao-win-1.jsonl` + `data/meta.json`.
 - `fetch-changelogs.js` — pulls per-issue status history → `data/cpao-log-1.jsonl`.
-- `lib.js` — shared credential handling and retrying Jira fetch.
+- `lib.js` — shared credential handling, retrying Jira fetch, paginated search.
+- `chat.js` — Google Chat helpers shared by the digests: webhook target, mention map,
+  markup-safe formatting within the message budget, retrying post.
+- `notify.js` — aging-WIP digest; `notify-epics.js` — tickets-without-an-epic digest.
 - `test.js` — post-build smoke test; CI runs it before deploying.
+- `test-chat.js` — offline tests for `chat.js`; CI runs it alongside `test.js`.
 - `dashboard.html`, `data/` — generated; gitignored, never committed.
 
 ## Running locally
@@ -50,13 +54,23 @@ The fetch scripts read `ATLASSIAN_EMAIL` and `ATLASSIAN_API_TOKEN` from the envi
 The file is gitignored. Never commit or paste the token anywhere else. If it is ever
 exposed, revoke it at id.atlassian.com immediately — deleting the file is not enough.
 
-## Aging WIP digest (Google Chat)
+## Google Chat digests
 
-Alongside each scheduled refresh, `notify.js` posts a digest to a Google Chat
-space: every issue in progress for more than 5 working days (the same
-working-day and clock-start rules as the chart), grouped by assignee with an
-@mention. Nothing is posted when no issue is over the threshold, and the job
-skips quietly if the webhook secret is missing.
+Alongside each scheduled refresh, two short digests go to a Google Chat space. Each
+posts nothing when it has nothing to say. Locally the scripts skip quietly if no
+webhook is configured; in CI a missing secret fails the job so the gap is visible.
+
+- **Aging WIP** (`notify.js`): every issue in progress for more than 5 working days
+  (the same working-day and clock-start rules as the chart), grouped by assignee with
+  an @mention.
+- **Tickets without an epic** (`notify-epics.js`): every non-epic ticket that is In
+  Progress, In Review, Reviewed, or Done within the last 14 days but has no parent
+  epic, grouped by assignee with an @mention, oldest first. The backlog (To Do, In
+  Discussion) is not listed, only counted in a closing line, so the message stays an
+  alert rather than a grooming list. Statuses and the Done window are constants at the
+  top of the script.
+
+Shared configuration, handled by `chat.js`:
 
 - Webhook: repository secret `GCHAT_WEBHOOK_URL` (locally: a `.gchat-webhook`
   file in this folder, gitignored).
@@ -66,9 +80,10 @@ skips quietly if the webhook secret is missing.
   name without a ping. To add someone, get their ID from the space membership
   (the Chat API `spaces.members` list shows email and ID; asking Claude to
   refresh the map is the quick way) and update the secret.
-- Threshold: `WIP_THRESHOLD_DAYS` in the workflow (default 5).
-- Test locally with `DRY_RUN=1 node notify.js` (prints instead of posting) —
-  never in CI, where logs are public.
+- Threshold: `WIP_THRESHOLD_DAYS` in the workflow (default 5), aging digest only.
+- Test locally with `DRY_RUN=1 node notify.js` or `DRY_RUN=1 node notify-epics.js`
+  (prints instead of posting), never in CI, where logs are public. `node test-chat.js`
+  exercises the shared formatting offline, no credentials needed.
 
 ## Publishing notes
 

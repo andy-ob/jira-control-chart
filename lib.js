@@ -74,4 +74,47 @@ async function changelog(key) {
   return out;
 }
 
-module.exports = { SITE, jiraFetch, changelog };
+// Every issue matching a JQL query, via the paginated search endpoint, with
+// the requested fields (comma-separated). Raw issue objects; callers map them.
+async function searchIssues(jql, fields) {
+  const out = [];
+  let pageToken = null;
+  for (let page = 0; page < 50; page++) {
+    const qs = new URLSearchParams({ jql, maxResults: "100", fields });
+    if (pageToken) qs.set("nextPageToken", pageToken);
+    const j = await jiraFetch("/rest/api/3/search/jql?" + qs);
+    out.push(...(j.issues || []));
+    pageToken = j.nextPageToken;
+    if (!pageToken) return out;
+  }
+  throw new Error("pagination did not terminate: " + jql);
+}
+
+// How many issues match a JQL query. The paginated search returns no total,
+// so this uses Jira's dedicated count endpoint (approximate only for very
+// large result sets; exact at this project's scale).
+async function countIssues(jql) {
+  const j = await jiraFetch("/rest/api/3/search/approximate-count", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jql }),
+  });
+  if (typeof j.count !== "number") throw new Error("approximate-count: unexpected response shape");
+  return j.count;
+}
+
+// The compact issue shape the Google Chat digest scripts share.
+const DIGEST_FIELDS = "summary,assignee,status,created";
+function toTicket(it) {
+  const f = it.fields || {};
+  return {
+    key: it.key,
+    summary: f.summary || "",
+    assignee: (f.assignee && f.assignee.displayName) || null,
+    email: (f.assignee && f.assignee.emailAddress) || null,
+    status: (f.status && f.status.name) || "",
+    created: f.created,
+  };
+}
+
+module.exports = { SITE, jiraFetch, changelog, searchIssues, countIssues, DIGEST_FIELDS, toTicket };
