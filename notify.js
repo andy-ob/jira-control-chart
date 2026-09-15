@@ -4,46 +4,14 @@
 // with an @mention. Runs from the scheduled workflow, independent of the page
 // build; posts nothing when no issue is over the threshold.
 //
-// Webhook: GCHAT_WEBHOOK_URL env var (CI secret) or .gchat-webhook file
-// (local, gitignored — one line, the full webhook URL).
-// DRY_RUN=1 prints the message instead of posting. Local use only: it prints
-// ticket titles and names, and CI logs on this public repo are world-readable.
-const fs = require("fs");
-const path = require("path");
-const { SITE, jiraFetch, changelog } = require("./lib");
+// Webhook, mention map and DRY_RUN=1 are handled by chat.js (shared with
+// notify-epics.js).
+const { SITE, jiraFetch, changelog, searchIssues, DIGEST_FIELDS, toTicket } = require("./lib");
+const { clean, trunc, userMap, target, groupByAssignee, buildDigest, deliver } = require("./chat");
 
 const PROJECT = "CPAO";
 const THRESHOLD = Number(process.env.WIP_THRESHOLD_DAYS) || 5; // working days
-const CHAR_BUDGET = 3800; // Chat truncates text at 4096 chars; keep headroom
 const DAY = 86400000;
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
-// Jira text lands inside Chat markup: strip the characters Chat parses so a
-// summary can't inject a mention (<users/all>), break a link, or toggle bold.
-const clean = s => String(s || "").replace(/[<>|*_~`]/g, "");
-
-function webhookUrl() {
-  if (process.env.GCHAT_WEBHOOK_URL) return process.env.GCHAT_WEBHOOK_URL;
-  const f = path.join(__dirname, ".gchat-webhook");
-  if (fs.existsSync(f)) return fs.readFileSync(f, "utf8").trim();
-  return null;
-}
-
-// email → numeric Google user ID. Chat webhooks only resolve <users/ID>
-// mentions (verified live: the email form renders as literal text), and the
-// webhook itself can't look IDs up, so they're maintained as a small map:
-// GCHAT_USER_MAP secret in CI, .gchat-users JSON file locally. Unmapped
-// assignees fall back to a bold name (visible, but no ping).
-function userMap() {
-  try {
-    if (process.env.GCHAT_USER_MAP) return JSON.parse(process.env.GCHAT_USER_MAP);
-    const f = path.join(__dirname, ".gchat-users");
-    if (fs.existsSync(f)) return JSON.parse(fs.readFileSync(f, "utf8"));
-  } catch (e) {
-    console.error("Ignoring unparseable user map: " + e.message);
-  }
-  return {};
-}
 
 // Working days between two timestamps: whole Saturdays/Sundays removed,
 // UTC day boundaries — the same rules the dashboard uses.
@@ -86,47 +54,12 @@ async function inProgressIssues() {
   // Epics excluded: they are umbrella containers that sit in progress for
   // months by design and would drown the digest in permanent entries
   const jql = `project = ${PROJECT} AND statusCategory = "In Progress" AND issuetype != Epic ORDER BY created ASC`;
-  const out = [];
-  let pageToken = null;
-  for (let page = 0; page < 50; page++) {
-    const qs = new URLSearchParams({ jql, maxResults: "100", fields: "summary,assignee,status,created" });
-    if (pageToken) qs.set("nextPageToken", pageToken);
-    const j = await jiraFetch("/rest/api/3/search/jql?" + qs);
-    for (const it of j.issues || []) {
-      const f = it.fields || {};
-      out.push({
-        key: it.key,
-        summary: f.summary || "",
-        assignee: (f.assignee && f.assignee.displayName) || null,
-        email: (f.assignee && f.assignee.emailAddress) || null,
-        status: (f.status && f.status.name) || "",
-        created: f.created,
-      });
-    }
-    pageToken = j.nextPageToken;
-    if (!pageToken) return out;
-  }
-  throw new Error("pagination did not terminate");
+  return (await searchIssues(jql, DIGEST_FIELDS)).map(toTicket);
 }
 
-const trunc = (s, n) => (s.length > n ? s.slice(0, n) + "…" : s);
-
 (async () => {
-  const dry = process.env.DRY_RUN === "1";
-  if (dry && process.env.CI) {
-    console.error("DRY_RUN prints ticket data and CI logs are public — refusing.");
-    process.exit(1);
-  }
-  const url = webhookUrl();
-  if (!url && !dry) {
-    if (process.env.CI) {
-      // a missing secret must not rot into a silently green no-op forever
-      console.error("GCHAT_WEBHOOK_URL secret is not set — failing so the gap is visible.");
-      process.exit(1);
-    }
-    console.log("No GCHAT_WEBHOOK_URL configured — skipping notify.");
-    return;
-  }
+  const dest = target();
+  if (!dest) return;
 
   const [catByName, issues] = await Promise.all([statusCategories(), inProgressIssues()]);
   console.log(issues.length + " issues currently in progress; checking ages…");
@@ -171,72 +104,22 @@ const trunc = (s, n) => (s.length > n ? s.slice(0, n) + "…" : s);
     return;
   }
 
-  // group by assignee, slowest ticket first within and across groups
-  const groups = new Map();
-  for (const t of aging) {
-    const gk = t.email || t.assignee || "__unassigned";
-    if (!groups.has(gk)) groups.set(gk, { email: t.email, name: t.assignee, tickets: [] });
-    groups.get(gk).tickets.push(t);
-  }
-  const ordered = [...groups.values()];
-  ordered.forEach(g => g.tickets.sort((a, b) => b.days - a.days));
-  ordered.sort((a, b) => b.tickets[0].days - a.tickets[0].days);
-
+  // slowest ticket first within and across assignees
+  const groups = groupByAssignee(aging, t => t.days);
   const today = new Date().toISOString().slice(0, 10);
   const fmtTicket = t => "• <" + SITE + "/browse/" + t.key + "|" + t.key + "> "
     + trunc(clean(t.summary), 60) + " — *" + t.days.toFixed(1) + " working days* (" + clean(t.status) + ")";
-  const lines = [
-    "*Aging work in progress · " + today + "*",
-    aging.length + (aging.length === 1 ? " ticket has" : " tickets have")
-      + " been in progress for more than " + THRESHOLD + " working day" + (THRESHOLD === 1 ? "" : "s") + ":",
-    "",
-  ];
-  // build within the character budget; a group header is only emitted when at
-  // least its first ticket also fits (no dangling @mention)
-  let used = lines.join("\n").length;
-  let shown = 0;
-  const SUFFIX_ROOM = 30; // space held back for the "…and N more." line
-  const USERS = userMap();
-  outer: for (const g of ordered) {
-    const id = g.email && USERS[g.email];
-    const header = id ? "<users/" + id + ">" : "*" + clean(g.name || "Unassigned") + "*";
-    if (used + header.length + fmtTicket(g.tickets[0]).length + SUFFIX_ROOM > CHAR_BUDGET) break;
-    lines.push(header); used += header.length + 1;
-    for (const t of g.tickets) {
-      const line = fmtTicket(t);
-      if (used + line.length + SUFFIX_ROOM > CHAR_BUDGET) { lines.push(""); break outer; }
-      lines.push(line); used += line.length + 1;
-      shown++;
-    }
-    lines.push(""); used += 1;
-  }
-  if (shown < aging.length) lines.push("…and " + (aging.length - shown) + " more.");
-  const text = lines.join("\n").trim();
-
-  if (dry) {
-    console.log("---- DRY RUN — would post: ----\n" + text);
-    return;
-  }
-  // one transient blip must not lose the day's digest; 4xx fails fast
-  let res;
-  for (let attempt = 1; ; attempt++) {
-    try {
-      res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text }),
-      });
-    } catch (e) {
-      if (attempt >= 3) throw e;
-      await sleep(2000 * attempt); continue;
-    }
-    if (res.status === 429 || res.status >= 500) {
-      if (attempt >= 3) throw new Error("Chat webhook HTTP " + res.status + " after " + attempt + " attempts");
-      await sleep(2000 * attempt); continue;
-    }
-    break;
-  }
-  if (!res.ok) throw new Error("Chat webhook HTTP " + res.status);
+  const { text, shown } = buildDigest({
+    intro: [
+      "*Aging work in progress · " + today + "*",
+      aging.length + (aging.length === 1 ? " ticket has" : " tickets have")
+        + " been in progress for more than " + THRESHOLD + " working day" + (THRESHOLD === 1 ? "" : "s") + ":",
+    ],
+    groups,
+    users: userMap(),
+    fmtTicket,
+  });
+  if (!(await deliver(dest, text))) return;
   // counts only: this repo's CI logs are public
-  console.log("Posted: " + shown + " of " + aging.length + " tickets across " + groups.size + " assignees.");
+  console.log("Posted: " + shown + " of " + aging.length + " tickets across " + groups.length + " assignees.");
 })().catch(e => { console.error(e.message || e); process.exit(1); });
