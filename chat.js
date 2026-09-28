@@ -1,7 +1,8 @@
 // Google Chat webhook helpers shared by the digest scripts (notify.js,
 // notify-epics.js): where a digest goes (webhook URL, DRY_RUN and CI guards),
-// the email → Google user ID mention map, Chat-markup-safe text, assembling a
-// per-assignee digest within Chat's message size, and a retrying POST.
+// the email → Google user ID mention map, Chat-markup-safe text, pull request
+// links, assembling a per-assignee digest within Chat's message size, and a
+// retrying POST.
 //
 // Webhook: GCHAT_WEBHOOK_URL env var (CI secret) or .gchat-webhook file
 // (local, gitignored, one line: the full webhook URL).
@@ -115,6 +116,33 @@ function buildDigest({ intro, groups, users, fmtTicket, footer = [] }) {
   return { text: lines.join("\n").trim(), shown };
 }
 
+// Suffix for a ticket line naming its pull requests, from the shape
+// lib.pullRequests returns. Open and draft PRs are linked (those are what
+// someone is still waiting on): the ones naming the ticket in their branch or
+// title first, newest first after that, at most `max`, with a "+N" for the
+// rest. Jira attaches a PR to every ticket its commits mention, so merged and
+// declined ones, often another ticket's, are not listed; a ticket with nothing
+// open but a merged PR gets a one-word note instead, since it is waiting on
+// something other than review. Only github.com URLs free of Chat markup are
+// linked. Empty string when there is nothing to say.
+const GITHUB_PR_URL = /^https:\/\/github\.com\/[^\s<>|]+$/;
+function prLinks(prs, key, max = 2) {
+  const all = prs || [];
+  const live = all.filter(p => (p.status === "OPEN" || p.status === "DRAFT") && GITHUB_PR_URL.test(p.url || ""));
+  if (!live.length) return all.some(p => p.status === "MERGED") ? " · PR merged" : "";
+  const keyRe = new RegExp("\\b" + String(key).replace(/[^A-Za-z0-9-]/g, "") + "(?!\\d)", "i");
+  const named = p => keyRe.test(p.branch + " " + p.name);
+  live.sort((a, b) => (named(b) - named(a)) || ((Date.parse(b.updated) || 0) - (Date.parse(a.updated) || 0)));
+  const links = live.slice(0, max).map(p => {
+    const repo = clean(String(p.repo || "").replace(/^[^/]+\//, "")); // drop the org
+    const num = String(p.id || "").replace(/\D/g, "");
+    const label = (repo || "PR") + (num ? "#" + num : "");
+    return "<" + p.url + "|" + label + ">" + (p.status === "DRAFT" ? " (draft)" : "");
+  });
+  const more = live.length - links.length;
+  return " · PR" + (links.length > 1 ? "s " : " ") + links.join(", ") + (more > 0 ? " +" + more : "");
+}
+
 // POST text to the webhook. One transient blip must not lose the day's
 // digest, so 429/5xx and network errors retry three times; 4xx fails fast.
 async function post(url, text) {
@@ -149,4 +177,4 @@ async function deliver({ url, dry }, text) {
   return true;
 }
 
-module.exports = { CHAR_BUDGET, clean, trunc, webhookUrl, userMap, target, groupByAssignee, buildDigest, post, deliver };
+module.exports = { CHAR_BUDGET, clean, trunc, webhookUrl, userMap, target, groupByAssignee, buildDigest, prLinks, post, deliver };

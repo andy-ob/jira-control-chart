@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 // Daily aging-WIP digest to Google Chat: every CPAO issue that has been in
 // progress for more than WIP_THRESHOLD_DAYS working days, grouped by assignee
-// with an @mention. Runs from the scheduled workflow, independent of the page
-// build; posts nothing when no issue is over the threshold.
+// with an @mention, each with links to its open pull requests so the reader
+// can go straight to what is waiting. Runs from the scheduled workflow,
+// independent of the page build; posts nothing when no issue is over the
+// threshold.
 //
 // Webhook, mention map and DRY_RUN=1 are handled by chat.js (shared with
 // notify-epics.js).
-const { SITE, jiraFetch, changelog, searchIssues, DIGEST_FIELDS, toTicket } = require("./lib");
-const { clean, trunc, userMap, target, groupByAssignee, buildDigest, deliver } = require("./chat");
+const { SITE, jiraFetch, changelog, searchIssues, pullRequests, DIGEST_FIELDS, toTicket } = require("./lib");
+const { clean, trunc, userMap, target, groupByAssignee, buildDigest, prLinks, deliver } = require("./chat");
 
 const PROJECT = "CPAO";
 const THRESHOLD = Number(process.env.WIP_THRESHOLD_DAYS) || 5; // working days
@@ -69,6 +71,7 @@ async function inProgressIssues() {
   // reopened) restarts its clock when picked up again. Created date fallback.
   const aging = [];
   const failed = [];
+  const prFailed = [];
   const queue = [...issues];
   const now = Date.now();
   async function worker() {
@@ -89,11 +92,21 @@ async function inProgressIssues() {
       }
       if (start === null) start = new Date(i.created).getTime();
       const days = workingDays(start, now);
-      if (days > THRESHOLD) aging.push({ ...i, days });
+      if (days <= THRESHOLD) continue;
+      // PR links are decoration on an aging ticket: a failed lookup (the
+      // dev-status API is undocumented) must not drop the ticket itself
+      let prs = [];
+      try {
+        prs = await pullRequests(i.id);
+      } catch (e) {
+        prFailed.push(i.key);
+      }
+      aging.push({ ...i, days, prs });
     }
   }
   await Promise.all(Array.from({ length: 8 }, worker));
   if (failed.length) console.log(failed.length + " changelog fetches failed; their issues were skipped.");
+  if (prFailed.length) console.log(prFailed.length + " PR lookups failed; those tickets are listed without PR links.");
   if (failed.length > Math.max(3, issues.length * 0.2)) {
     console.error("Too many failures — not posting a misleading digest.");
     process.exit(1);
@@ -108,7 +121,8 @@ async function inProgressIssues() {
   const groups = groupByAssignee(aging, t => t.days);
   const today = new Date().toISOString().slice(0, 10);
   const fmtTicket = t => "• <" + SITE + "/browse/" + t.key + "|" + t.key + "> "
-    + trunc(clean(t.summary), 60) + " — *" + t.days.toFixed(1) + " working days* (" + clean(t.status) + ")";
+    + trunc(clean(t.summary), 60) + " — *" + t.days.toFixed(1) + " working days* (" + clean(t.status) + ")"
+    + prLinks(t.prs, t.key);
   const { text, shown } = buildDigest({
     intro: [
       "*Aging work in progress · " + today + "*",

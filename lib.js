@@ -103,11 +103,45 @@ async function countIssues(jql) {
   return j.count;
 }
 
-// The compact issue shape the Google Chat digest scripts share.
+// Pull requests the GitHub for Jira app has attached to an issue (it matches
+// the key in branch names, PR titles and commit messages), via Jira's
+// dev-status API. That API is undocumented, so callers treat a failure as
+// "unknown", never as a reason to drop the issue. The applicationType comes
+// from the summary call's byInstanceType key: the literal "GitHub" returns
+// an empty list without error, and omitting it returns HTTP 500. Issues with
+// no linked PRs skip the detail call. Returns [{ id, name, url, repo, status,
+// branch, updated }], status being OPEN / DRAFT / MERGED / DECLINED.
+async function pullRequests(issueId) {
+  const s = await jiraFetch("/rest/dev-status/latest/issue/summary?issueId=" + issueId);
+  const byInstance = (((s.summary || {}).pullrequest || {}).byInstanceType) || {};
+  const out = [];
+  for (const app of Object.keys(byInstance)) {
+    const qs = new URLSearchParams({ issueId: String(issueId), applicationType: app, dataType: "pullrequest" });
+    const d = await jiraFetch("/rest/dev-status/latest/issue/detail?" + qs);
+    for (const inst of d.detail || []) {
+      for (const p of inst.pullRequests || []) {
+        out.push({
+          id: p.id || "", // "#9053"
+          name: p.name || "",
+          url: p.url || "",
+          repo: p.repositoryName || "", // "twinkltech/twinkl-web"
+          status: p.status || "",
+          branch: (p.source && p.source.branch) || "",
+          updated: p.lastUpdate || null,
+        });
+      }
+    }
+  }
+  return out;
+}
+
+// The compact issue shape the Google Chat digest scripts share. The numeric
+// id is what the dev-status API keys on.
 const DIGEST_FIELDS = "summary,assignee,status,created";
 function toTicket(it) {
   const f = it.fields || {};
   return {
+    id: it.id,
     key: it.key,
     summary: f.summary || "",
     assignee: (f.assignee && f.assignee.displayName) || null,
@@ -117,4 +151,4 @@ function toTicket(it) {
   };
 }
 
-module.exports = { SITE, jiraFetch, changelog, searchIssues, countIssues, DIGEST_FIELDS, toTicket };
+module.exports = { SITE, jiraFetch, changelog, searchIssues, countIssues, pullRequests, DIGEST_FIELDS, toTicket };
