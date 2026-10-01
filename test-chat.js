@@ -1,7 +1,8 @@
 // Offline tests for the Google Chat digest helpers (chat.js): markup
-// stripping, mention resolution, grouping order, and the message budget.
-// No network, no credentials: safe to run anywhere, including CI.
-const { CHAR_BUDGET, clean, groupByAssignee, buildDigest } = require("./chat");
+// stripping, mention resolution, grouping order, the message budget, and
+// pull request links. No network, no credentials: safe to run anywhere,
+// including CI.
+const { CHAR_BUDGET, clean, groupByAssignee, buildDigest, prLinks } = require("./chat");
 let fails = 0;
 const ok = (cond, msg) => { console.log((cond ? "PASS" : "FAIL") + " " + msg); if (!cond) fails++; };
 
@@ -38,5 +39,28 @@ ok(lastHeader && /^• /.test(lines[lastHeader[1] + 1]), "no dangling mention: l
 // injection: markup inside a name or summary cannot mint a mention or bold
 const d3 = buildDigest({ intro: ["*T*"], groups: groupByAssignee([T("I-1", null, "Bo <users/all> *x*", 1, "<users/all> *loud*")], t => t.rank), users, fmtTicket: fmt });
 ok(!d3.text.includes("<users/all>") && d3.text.split("*").length === 5, "markup in names and summaries is neutralised");
+
+// PR links: open and draft PRs are linked with the ticket's own first, merged
+// and declined ones (Jira attaches every PR whose commits mention the key)
+// are dropped, a merged-only ticket gets a note, and only clean github.com
+// URLs become links
+const P = (n, status, branch, updated, repo = "twinkltech/twinkl-web", url = "https://github.com/twinkltech/twinkl-web/pull/" + n) =>
+  ({ id: "#" + n, name: "", url, repo, status, branch, updated });
+ok(prLinks([], "K-1") === "" && prLinks([P(1, "DECLINED", "feat/K-1-x", "2026-01-01")], "K-1") === "", "nothing open and nothing merged: no suffix");
+ok(prLinks([P(1, "MERGED", "feat/K-1-x", "2026-01-01")], "K-1") === " · PR merged", "merged-only ticket gets a note, not a link");
+const s1 = prLinks([
+  P(7, "OPEN", "fix/NOTICKET-other", "2026-03-01"),
+  P(5, "DRAFT", "feat/K-1-thing", "2026-02-01"),
+  P(9, "MERGED", "feat/K-1-done", "2026-04-01"),
+], "K-1");
+ok(s1 === " · PRs <https://github.com/twinkltech/twinkl-web/pull/5|twinkl-web#5> (draft), <https://github.com/twinkltech/twinkl-web/pull/7|twinkl-web#7>",
+  "ticket's own PR first, draft marked, merged dropped, org stripped from the label");
+const s2 = prLinks([P(1, "OPEN", "a", "2026-01-01"), P(2, "OPEN", "b", "2026-01-02"), P(3, "OPEN", "c", "2026-01-03")], "K-1");
+ok(s2.includes("#3>, ") && s2.includes("#2>") && !s2.includes("#1>") && s2.endsWith(" +1"), "capped at the two newest with a +N for the rest");
+const s3 = prLinks([P(6, "OPEN", "feat/K-12-x", "2026-02-01"), P(8, "OPEN", "feat/K-1-y", "2026-01-01")], "K-1");
+ok(s3.indexOf("#8>") < s3.indexOf("#6>"), "key match is whole-key: K-12 does not count as K-1");
+ok(prLinks([P(4, "OPEN", "x", "2026-01-01", "twinkltech/x", "https://evil.example/pull/4|<users/all>")], "K-1") === "", "a non-GitHub or markup-carrying URL is never linked");
+const s4 = prLinks([P(4, "OPEN", "x", "2026-01-01", "twinkltech/*bold*")], "K-1");
+ok(s4.includes("|bold#4>") && !s4.includes("*"), "markup in a repo name is stripped from the link text");
 
 process.exit(fails ? 1 : 0);

@@ -25,7 +25,7 @@ Defaults, all switchable in the page's filter row:
 - `fetch-issues.js` — pulls the completed issues for the rolling window and the project
   totals → `data/cpao-win-1.jsonl` + `data/meta.json`.
 - `fetch-changelogs.js` — pulls per-issue status history → `data/cpao-log-1.jsonl`.
-- `lib.js` — shared credential handling, retrying Jira fetch, paginated search.
+- `lib.js` — shared credential handling, retrying Jira fetch, paginated search, PR lookup.
 - `chat.js` — Google Chat helpers shared by the digests: webhook target, mention map,
   markup-safe formatting within the message budget, retrying post.
 - `notify.js` — aging-WIP digest; `notify-epics.js` — tickets-without-an-epic digest.
@@ -62,7 +62,9 @@ webhook is configured; in CI a missing secret fails the job so the gap is visibl
 
 - **Aging WIP** (`notify.js`): every issue in progress for more than 5 working days
   (the same working-day and clock-start rules as the chart), grouped by assignee with
-  an @mention.
+  an @mention. Each line links the ticket's open or draft pull requests (up to two,
+  from the GitHub for Jira integration, read through Jira's dev-status API with the
+  same credentials); a ticket whose PRs are all merged gets a "PR merged" note instead.
 - **Tickets without an epic** (`notify-epics.js`): every non-epic ticket that is In
   Progress, In Review, Reviewed, or Done within the last 14 days but has no parent
   epic, grouped by assignee with an @mention, oldest first. The backlog (To Do, In
