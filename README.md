@@ -28,7 +28,8 @@ Defaults, all switchable in the page's filter row:
 - `lib.js` — shared credential handling, retrying Jira fetch, paginated search, PR lookup.
 - `chat.js` — Google Chat helpers shared by the digests: webhook target, mention map,
   markup-safe formatting within the message budget, retrying post.
-- `notify.js` — aging-WIP digest; `notify-epics.js` — tickets-without-an-epic digest.
+- `notify.js` — aging-WIP digest; `notify-epics.js` — tickets-without-an-epic digest;
+  `notify-subtasks.js` — sub-tasks-in-use digest.
 - `test.js` — post-build smoke test; CI runs it before deploying.
 - `test-chat.js` — offline tests for `chat.js`; CI runs it alongside `test.js`.
 - `dashboard.html`, `data/` — generated; gitignored, never committed.
@@ -56,7 +57,7 @@ exposed, revoke it at id.atlassian.com immediately — deleting the file is not 
 
 ## Google Chat digests
 
-Alongside each scheduled refresh, two short digests go to a Google Chat space. Each
+Alongside each scheduled refresh, three short digests go to a Google Chat space. Each
 posts nothing when it has nothing to say. Locally the scripts skip quietly if no
 webhook is configured; in CI a missing secret fails the job so the gap is visible.
 
@@ -71,6 +72,11 @@ webhook is configured; in CI a missing secret fails the job so the gap is visibl
   Discussion) is not listed, only counted in a closing line, so the message stays an
   alert rather than a grooming list. Statuses and the Done window are constants at the
   top of the script.
+- **Sub-tasks in use** (`notify-subtasks.js`): every open sub-task, with a reminder that
+  the team does not use that issue type and how to fix it (change the type to a Task or
+  Bug, or fold the work into the parent). The @mention goes to the assignee, or to
+  whoever created the sub-task while it is unassigned. A sub-task drops off once it is
+  converted or closed.
 
 Shared configuration, handled by `chat.js`:
 
@@ -83,8 +89,8 @@ Shared configuration, handled by `chat.js`:
   (the Chat API `spaces.members` list shows email and ID; asking Claude to
   refresh the map is the quick way) and update the secret.
 - Threshold: `WIP_THRESHOLD_DAYS` in the workflow (default 5), aging digest only.
-- Test locally with `DRY_RUN=1 node notify.js` or `DRY_RUN=1 node notify-epics.js`
-  (prints instead of posting), never in CI, where logs are public. `node test-chat.js`
+- Test locally with `DRY_RUN=1 node notify.js` (or `notify-epics.js`, `notify-subtasks.js`;
+  prints instead of posting), never in CI, where logs are public. `node test-chat.js`
   exercises the shared formatting offline, no credentials needed.
 
 ## Publishing notes

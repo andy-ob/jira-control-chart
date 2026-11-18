@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       post_digest:
-        description: "Also post the Google Chat digests (aging WIP, tickets without an epic)"
+        description: "Also post the Google Chat digests (aging WIP, tickets without an epic, sub-tasks in use)"
         type: boolean
         default: false
   push:
@@ -86,6 +86,14 @@ jobs:
         # still runs when the aging digest failed, so one bad post can't hide the other
         if: ${{ !cancelled() }}
         run: node notify-epics.js
+        env:
+          ATLASSIAN_EMAIL: ${{ secrets.ATLASSIAN_EMAIL }}
+          ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
+          GCHAT_WEBHOOK_URL: ${{ secrets.GCHAT_WEBHOOK_URL }}
+          GCHAT_USER_MAP: ${{ secrets.GCHAT_USER_MAP }}
+      - name: Post sub-task digest
+        if: ${{ !cancelled() }}
+        run: node notify-subtasks.js
         env:
           ATLASSIAN_EMAIL: ${{ secrets.ATLASSIAN_EMAIL }}
           ATLASSIAN_API_TOKEN: ${{ secrets.ATLASSIAN_API_TOKEN }}
